@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>«XXI Век» — сеть многопрофильных клиник в Таганроге</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --blue: #2493f9;
+      --blue-hover: #0385d1;
+      --blue-dark: #1a7ad4;
+      --text: #1a1a2e;
+      --text-light: #5a6474;
+      --bg-light: #f5f8ff;
+      --border: #e4eaf2;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', sans-serif; color: var(--text); background: #fff; }
+    a { color: inherit; text-decoration: none; cursor: default; pointer-events: none; }
+    a.active-link { pointer-events: auto; cursor: pointer; }
+
+    /* ─── HEADER ─── */
+    header {
+      position: sticky; top: 0; z-index: 100;
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+      box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    }
+
+    .header-inner {
+      max-width: 1240px; margin: 0 auto;
+      padding: 0 24px;
+      height: 72px;
+      display: flex; align-items: center; gap: 32px;
+    }
+
+    .logo {
+      display: flex; align-items: center; gap: 10px;
+      flex-shrink: 0;
+    }
+
+    .logo-icon {
+      width: 48px; height: 48px;
+      background: var(--blue);
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 13px; font-weight: 700; line-height: 1.1;
+      text-align: center;
+    }
+
+    .logo-text { line-height: 1.2; }
+    .logo-text strong { font-size: 17px; font-weight: 700; color: var(--blue); }
+    .logo-text span { font-size: 11px; color: var(--text-light); display: block; }
+
+    nav { display: flex; align-items: center; gap: 4px; flex: 1; }
+
+    nav a {
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 14px; font-weight: 500;
+      color: var(--text);
+      transition: background .15s, color .15s;
+      white-space: nowrap;
+    }
+    nav a:hover { background: var(--bg-light); color: var(--blue); }
+
+    nav a.nav-login {
+      pointer-events: auto;
+      cursor: pointer;
+      color: var(--blue);
+      border: 1.5px solid var(--blue);
+      border-radius: 24px;
+      padding: 7px 16px;
+    }
+    nav a.nav-login:hover { background: var(--blue); color: #fff; }
+
+    .header-phone {
+      flex-shrink: 0;
+      background: var(--blue);
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 24px;
+      font-size: 15px; font-weight: 600;
+      white-space: nowrap;
+    }
+
+    /* ─── HERO ─── */
+    .hero {
+      background: linear-gradient(135deg, #1565c0 0%, #2493f9 50%, #42a5f5 100%);
+      min-height: 520px;
+      display: flex; align-items: center;
+      position: relative; overflow: hidden;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    }
+
+    .hero-inner {
+      max-width: 1240px; margin: 0 auto; padding: 60px 24px;
+      position: relative; z-index: 1;
+      display: grid; grid-template-columns: 1fr 480px; gap: 60px; align-items: center;
+    }
+
+    .hero h1 {
+      font-size: 42px; font-weight: 700;
+      color: #fff; line-height: 1.15;
+      margin-bottom: 16px;
+    }
+
+    .hero p {
+      font-size: 20px; color: rgba(255,255,255,.85);
+      margin-bottom: 32px; line-height: 1.5;
+    }
+
+    .hero-btn {
+      display: inline-block;
+      background: #fff;
+      color: var(--blue);
+      padding: 14px 32px;
+      border-radius: 30px;
+      font-weight: 700; font-size: 15px;
+      box-shadow: 0 4px 16px rgba(0,0,0,.15);
+      pointer-events: none;
+    }
+
+    .hero-card {
+      background: rgba(255,255,255,.15);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,.25);
+      border-radius: 20px;
+      padding: 32px;
+      color: #fff;
+    }
+
+    .hero-card h3 { font-size: 20px; font-weight: 700; margin-bottom: 20px; }
+
+    .hero-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .stat { text-align: center; }
+    .stat-num { font-size: 32px; font-weight: 800; }
+    .stat-label { font-size: 12px; opacity: .8; margin-top: 4px; line-height: 1.3; }
+
+    /* ─── SECTIONS ─── */
+    section { padding: 64px 0; }
+    section:nth-child(even) { background: var(--bg-light); }
+
+    .container { max-width: 1240px; margin: 0 auto; padding: 0 24px; }
+
+    .section-title {
+      font-size: 32px; font-weight: 700;
+      text-align: center; margin-bottom: 8px;
+    }
+    .section-sub {
+      text-align: center; color: var(--text-light);
+      font-size: 16px; margin-bottom: 48px;
+    }
+
+    /* ─── SERVICES GRID ─── */
+    .services-grid {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 16px;
+    }
+
+    .service-card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px 16px;
+      text-align: center;
+      transition: box-shadow .2s, transform .2s;
+      cursor: default;
+    }
+    .service-card:hover { box-shadow: 0 6px 20px rgba(36,147,249,.15); transform: translateY(-3px); }
+
+    .service-icon {
+      width: 56px; height: 56px;
+      background: #e8f3ff;
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 14px;
+      font-size: 26px;
+    }
+
+    .service-card h4 { font-size: 13px; font-weight: 600; color: var(--text); }
+
+    /* ─── DOCTORS ─── */
+    .doctors-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 24px;
+    }
+
+    .doctor-card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      transition: box-shadow .2s;
+    }
+    .doctor-card:hover { box-shadow: 0 8px 24px rgba(0,0,0,.1); }
+
+    .doctor-photo {
+      height: 180px;
+      background: linear-gradient(135deg, #dbeeff, #b3d4fa);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 64px;
+    }
+
+    .doctor-info { padding: 20px; }
+    .doctor-info h4 { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+    .doctor-spec { font-size: 13px; color: var(--blue); font-weight: 500; margin-bottom: 8px; }
+    .doctor-clinic { font-size: 12px; color: var(--text-light); margin-bottom: 12px; }
+    .doctor-price {
+      font-size: 14px; font-weight: 700; color: var(--text);
+    }
+
+    /* ─── PROGRAMS ─── */
+    .programs-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
+    }
+
+    .program-card {
+      border-radius: 20px; padding: 32px;
+      background: linear-gradient(135deg, #e8f3ff, #cce2ff);
+      position: relative; overflow: hidden;
+    }
+
+    .program-card::after {
+      content: '';
+      position: absolute; right: -20px; bottom: -20px;
+      width: 100px; height: 100px;
+      background: rgba(36,147,249,.1);
+      border-radius: 50%;
+    }
+
+    .program-icon { font-size: 40px; margin-bottom: 16px; }
+    .program-card h3 { font-size: 20px; font-weight: 700; margin-bottom: 10px; color: var(--blue-dark); }
+    .program-card p { font-size: 14px; color: var(--text-light); line-height: 1.6; }
+
+    /* ─── LOCATIONS ─── */
+    .locations-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
+    }
+
+    .location-card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+    }
+    .location-card h4 { font-size: 15px; font-weight: 700; margin-bottom: 12px; color: var(--blue); }
+    .location-detail { font-size: 13px; color: var(--text-light); margin-bottom: 6px; display: flex; gap: 8px; }
+
+    /* ─── FOOTER ─── */
+    footer {
+      background: #1a1f2e;
+      color: rgba(255,255,255,.7);
+      padding: 48px 0 24px;
+    }
+
+    .footer-inner {
+      max-width: 1240px; margin: 0 auto; padding: 0 24px;
+      display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 40px;
+    }
+
+    .footer-brand strong { font-size: 18px; font-weight: 700; color: #fff; display: block; margin-bottom: 8px; }
+    .footer-brand p { font-size: 13px; line-height: 1.6; }
+
+    footer h5 { color: #fff; font-size: 14px; font-weight: 600; margin-bottom: 16px; }
+    .footer-links { display: flex; flex-direction: column; gap: 8px; }
+    .footer-links a { font-size: 13px; transition: color .2s; }
+    .footer-links a:hover { color: var(--blue); }
+
+    .footer-bottom {
+      max-width: 1240px; margin: 32px auto 0; padding: 20px 24px 0;
+      border-top: 1px solid rgba(255,255,255,.1);
+      display: flex; justify-content: space-between;
+      font-size: 12px; color: rgba(255,255,255,.4);
+    }
+
+    .social-links { display: flex; gap: 10px; margin-top: 16px; }
+    .social-btn {
+      width: 34px; height: 34px;
+      background: rgba(255,255,255,.1);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; transition: background .2s;
+    }
+    .social-btn:hover { background: var(--blue); }
+
+    /* ─── MODAL OVERLAY ─── */
+    .overlay {
+      display: none;
+      position: fixed; inset: 0; z-index: 1000;
+      background: rgba(0,0,0,.5);
+      backdrop-filter: blur(4px);
+      align-items: center; justify-content: center;
+    }
+    .overlay.open { display: flex; }
+
+    /* ─── LOGIN MODAL ─── */
+    .modal {
+      background: #fff;
+      border-radius: 20px;
+      padding: 40px;
+      width: 420px;
+      box-shadow: 0 24px 64px rgba(0,0,0,.2);
+      position: relative;
+      animation: modalIn .25s ease;
+    }
+
+    @keyframes modalIn {
+      from { opacity: 0; transform: scale(.92) translateY(-10px); }
+      to { opacity: 1; transform: none; }
+    }
+
+    .modal-close {
+      position: absolute; top: 16px; right: 16px;
+      background: none; border: none;
+      font-size: 22px; cursor: pointer; color: #aaa;
+      line-height: 1;
+    }
+    .modal-close:hover { color: #333; }
+
+    .modal-logo {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 24px;
+    }
+    .modal-logo-icon {
+      width: 44px; height: 44px; background: var(--blue);
+      border-radius: 10px; display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 12px; font-weight: 700; text-align: center; line-height: 1.1;
+    }
+    .modal-logo strong { font-size: 16px; color: var(--blue); }
+    .modal-logo span { font-size: 11px; color: var(--text-light); display: block; }
+
+    .modal h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+    .modal .subtitle { font-size: 14px; color: var(--text-light); margin-bottom: 28px; }
+
+    .form-group { margin-bottom: 18px; }
+    .form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--text); }
+
+    .form-group input {
+      width: 100%;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 15px;
+      outline: none;
+      transition: border-color .2s;
+      font-family: inherit;
+    }
+    .form-group input:focus { border-color: var(--blue); }
+
+    .btn-login {
+      width: 100%;
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background .2s;
+      margin-top: 8px;
+    }
+    .btn-login:hover { background: var(--blue-hover); }
+
+    .error-msg {
+      display: none;
+      color: #e53e3e;
+      font-size: 13px;
+      margin-top: 12px;
+      text-align: center;
+      background: #fff5f5;
+      border-radius: 8px;
+      padding: 10px;
+    }
+    .error-msg.show { display: block; }
+
+    /* ─── DASHBOARD (после логина) ─── */
+    #dashboard { display: none; }
+
+    #dashboard.open { display: block; }
+
+    .dash-header {
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 64px;
+      display: flex; align-items: center; gap: 24px;
+      position: sticky; top: 0; z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    }
+
+    .dash-header .logo { flex: 1; }
+
+    .dash-user {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .dash-avatar {
+      width: 36px; height: 36px;
+      background: var(--blue);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 14px; font-weight: 700;
+    }
+    .dash-user-name { font-size: 14px; font-weight: 600; }
+    .btn-logout {
+      background: none; border: 1.5px solid var(--border);
+      border-radius: 20px; padding: 7px 16px;
+      font-size: 13px; cursor: pointer; font-family: inherit;
+      transition: border-color .2s;
+    }
+    .btn-logout:hover { border-color: #e53e3e; color: #e53e3e; }
+
+    .dash-body {
+      max-width: 1240px; margin: 0 auto;
+      padding: 32px 24px;
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 28px;
+      align-items: start;
+    }
+
+    .dash-left h2 { font-size: 22px; font-weight: 700; margin-bottom: 20px; }
+
+    /* ─── TABLE ─── */
+    .patients-table-wrap {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,.04);
+    }
+
+    .table-toolbar {
+      padding: 18px 20px;
+      display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .table-toolbar h3 { font-size: 16px; font-weight: 700; }
+
+    .badge {
+      background: #e8f3ff; color: var(--blue);
+      font-size: 12px; font-weight: 600;
+      padding: 3px 10px; border-radius: 20px;
+    }
+
+    table { width: 100%; border-collapse: collapse; }
+
+    thead th {
+      background: var(--bg-light);
+      padding: 12px 16px;
+      font-size: 12px; font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--text-light);
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    tbody td {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+    }
+
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: #fafcff; }
+
+    .patient-name { font-weight: 600; }
+    .patient-phone { color: var(--text-light); font-size: 13px; }
+    .status-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px; font-weight: 600;
+    }
+    .status-active { background: #e6f9f0; color: #27ae60; }
+
+    /* ─── CHAT IFRAME PANEL ─── */
+    .chat-panel {
+      position: sticky;
+      top: 88px;
+    }
+
+    .chat-panel h2 { font-size: 18px; font-weight: 700; margin-bottom: 14px; }
+
+    .chat-frame-wrap {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 4px 16px rgba(36,147,249,.12);
+    }
+
+    .chat-frame-wrap iframe {
+      width: 100%;
+      height: 520px;
+      border: none;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════
+     ОСНОВНОЙ САЙТ
+═══════════════════════════════════════════ -->
+<div id="main-site">
+
+  <!-- HEADER -->
+  <header>
+    <div class="header-inner">
+      <div class="logo">
+        <div class="logo-icon">XXI<br>Век</div>
+        <div class="logo-text">
+          <strong>«XXI Век»</strong>
+          <span>сеть многопрофильных клиник</span>
+        </div>
+      </div>
+
+      <nav>
+        <a href="#">Врачи</a>
+        <a href="#">Услуги</a>
+        <a href="#">Хирургия</a>
+        <a href="#">Акции</a>
+        <a href="#">Чек-апы</a>
+        <a href="#">О нас</a>
+        <a href="#">Вакансии</a>
+        <a href="#" class="nav-login active-link" id="openLoginBtn">Вход</a>
+      </nav>
+
+      <div class="header-phone">+7 (8634) 38-00-08</div>
+    </div>
+  </header>
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="hero-inner">
+      <div>
+        <h1>Центр лечения боли<br>в Таганроге</h1>
+        <p>Избавим от боли за 1 день</p>
+        <span class="hero-btn">Подробнее</span>
+      </div>
+      <div class="hero-card">
+        <h3>Клиника «XXI Век»</h3>
+        <div class="hero-stats">
+          <div class="stat">
+            <div class="stat-num">25+</div>
+            <div class="stat-label">лет на рынке медицины</div>
+          </div>
+          <div class="stat">
+            <div class="stat-num">50+</div>
+            <div class="stat-label">квалифицированных врачей</div>
+          </div>
+          <div class="stat">
+            <div class="stat-num">5</div>
+            <div class="stat-label">клиник в Таганроге</div>
+          </div>
+          <div class="stat">
+            <div class="stat-num">24/7</div>
+            <div class="stat-label">запись на приём онлайн</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SERVICES -->
+  <section>
+    <div class="container">
+      <h2 class="section-title">Направления</h2>
+      <p class="section-sub">Более 30 медицинских специальностей в одном месте</p>
+      <div class="services-grid">
+        <div class="service-card"><div class="service-icon">🩺</div><h4>Терапия</h4></div>
+        <div class="service-card"><div class="service-icon">❤️</div><h4>Кардиология</h4></div>
+        <div class="service-card"><div class="service-icon">🔪</div><h4>Хирургия</h4></div>
+        <div class="service-card"><div class="service-icon">👩</div><h4>Гинекология</h4></div>
+        <div class="service-card"><div class="service-icon">🔬</div><h4>Проктология</h4></div>
+        <div class="service-card"><div class="service-icon">📡</div><h4>УЗИ</h4></div>
+        <div class="service-card"><div class="service-icon">👁️</div><h4>Офтальмология</h4></div>
+        <div class="service-card"><div class="service-icon">🦴</div><h4>Ортопедия</h4></div>
+        <div class="service-card"><div class="service-icon">🧠</div><h4>Неврология</h4></div>
+        <div class="service-card"><div class="service-icon">👂</div><h4>Оториноларинг.</h4></div>
+        <div class="service-card"><div class="service-icon">🦷</div><h4>Стоматология</h4></div>
+        <div class="service-card"><div class="service-icon">🧬</div><h4>Эндокринология</h4></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DOCTORS -->
+  <section>
+    <div class="container">
+      <h2 class="section-title">Наши врачи</h2>
+      <p class="section-sub">Опытные специалисты с многолетней практикой</p>
+      <div class="doctors-grid">
+        <div class="doctor-card">
+          <div class="doctor-photo">👨‍⚕️</div>
+          <div class="doctor-info">
+            <h4>Касумов Г.Ш.</h4>
+            <div class="doctor-spec">Терапевт</div>
+            <div class="doctor-clinic">21 Век на Русском поле</div>
+            <div class="doctor-price">от 1 500 ₽</div>
+          </div>
+        </div>
+        <div class="doctor-card">
+          <div class="doctor-photo">👩‍⚕️</div>
+          <div class="doctor-info">
+            <h4>Нестерова И.И.</h4>
+            <div class="doctor-spec">Терапевт</div>
+            <div class="doctor-clinic">21 Век на Русском поле</div>
+            <div class="doctor-price">от 1 500 ₽</div>
+          </div>
+        </div>
+        <div class="doctor-card">
+          <div class="doctor-photo">👩‍⚕️</div>
+          <div class="doctor-info">
+            <h4>Савченко И.О.</h4>
+            <div class="doctor-spec">Терапевт</div>
+            <div class="doctor-clinic">21 Век на Русском поле</div>
+            <div class="doctor-price">от 1 500 ₽</div>
+          </div>
+        </div>
+        <div class="doctor-card">
+          <div class="doctor-photo">👩‍⚕️</div>
+          <div class="doctor-info">
+            <h4>Шанько Н.В.</h4>
+            <div class="doctor-spec">Терапевт</div>
+            <div class="doctor-clinic">21 Век на Северном</div>
+            <div class="doctor-price">от 1 500 ₽</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROGRAMS -->
+  <section>
+    <div class="container">
+      <h2 class="section-title">Комплексные программы</h2>
+      <p class="section-sub">Индивидуальный подход к лечению и восстановлению</p>
+      <div class="programs-grid">
+        <div class="program-card">
+          <div class="program-icon">🦵</div>
+          <h3>Здоровые колени</h3>
+          <p>Комплексная программа лечения и реабилитации при заболеваниях коленных суставов</p>
+        </div>
+        <div class="program-card">
+          <div class="program-icon">🧘</div>
+          <h3>Здоровый позвоночник</h3>
+          <p>Диагностика и лечение заболеваний позвоночника, избавление от болей в спине</p>
+        </div>
+        <div class="program-card">
+          <div class="program-icon">💆</div>
+          <h3>Здоровая шея</h3>
+          <p>Эффективное лечение шейного остеохондроза и устранение болей в шейном отделе</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LOCATIONS -->
+  <section>
+    <div class="container">
+      <h2 class="section-title">Наши клиники</h2>
+      <p class="section-sub">Пять современных медицинских центров в Таганроге</p>
+      <div class="locations-grid">
+        <div class="location-card">
+          <h4>Диагностический центр</h4>
+          <div class="location-detail"><span>📍</span><span>ул. Петровская, 99</span></div>
+          <div class="location-detail"><span>🕐</span><span>Пн–Пт: 7:00–19:00</span></div>
+          <div class="location-detail"><span>📞</span><span>+7 (8634) 38-00-08</span></div>
+        </div>
+        <div class="location-card">
+          <h4>Хирургический центр</h4>
+          <div class="location-detail"><span>📍</span><span>ул. Русское поле, 15</span></div>
+          <div class="location-detail"><span>🕐</span><span>Пн–Пт: 8:00–18:00</span></div>
+          <div class="location-detail"><span>📞</span><span>+7 (8634) 38-00-08</span></div>
+        </div>
+        <div class="location-card">
+          <h4>Центр реабилитации</h4>
+          <div class="location-detail"><span>📍</span><span>пр. Северный, 34</span></div>
+          <div class="location-detail"><span>🕐</span><span>Пн–Сб: 8:00–17:00</span></div>
+          <div class="location-detail"><span>📞</span><span>+7 (8634) 38-00-08</span></div>
+        </div>
+        <div class="location-card">
+          <h4>Стоматология</h4>
+          <div class="location-detail"><span>📍</span><span>ул. Фрунзе, 55</span></div>
+          <div class="location-detail"><span>🕐</span><span>Пн–Пт: 9:00–19:00</span></div>
+          <div class="location-detail"><span>📞</span><span>+7 (8634) 38-00-08</span></div>
+        </div>
+        <div class="location-card">
+          <h4>Детская клиника</h4>
+          <div class="location-detail"><span>📍</span><span>ул. Ленина, 120</span></div>
+          <div class="location-detail"><span>🕐</span><span>Пн–Пт: 8:00–18:00</span></div>
+          <div class="location-detail"><span>📞</span><span>+7 (8634) 38-00-08</span></div>
+        </div>
+        <div class="location-card">
+          <h4>Эстетическая медицина</h4>
+          <div class="location-detail"><span>📍</span><span>ул. Чехова, 78</span></div>
+          <div class="location-detail"><span>🕐</span><span>Пн–Сб: 9:00–18:00</span></div>
+          <div class="location-detail"><span>📞</span><span>+7 (8634) 38-00-08</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <strong>«XXI Век»</strong>
+        <p>Сеть многопрофильных клиник в Таганроге. Добиваясь существенного улучшения здоровья наших пациентов, дарим надежду и уверенность в завтрашнем дне.</p>
+        <div class="social-links">
+          <div class="social-btn">ВК</div>
+          <div class="social-btn">ОК</div>
+          <div class="social-btn">TG</div>
+          <div class="social-btn">YT</div>
+        </div>
+      </div>
+
+      <div>
+        <h5>Пациентам</h5>
+        <div class="footer-links">
+          <a href="#">Врачи</a>
+          <a href="#">Услуги и цены</a>
+          <a href="#">Акции</a>
+          <a href="#">Чек-апы</a>
+          <a href="#">Запись онлайн</a>
+        </div>
+      </div>
+
+      <div>
+        <h5>Клиника</h5>
+        <div class="footer-links">
+          <a href="#">О нас</a>
+          <a href="#">Лицензии</a>
+          <a href="#">Вакансии</a>
+          <a href="#">Новости</a>
+          <a href="#">Контакты</a>
+        </div>
+      </div>
+
+      <div>
+        <h5>Надзорные органы</h5>
+        <div class="footer-links">
+          <a href="#">Минздрав РФ</a>
+          <a href="#">Минздрав РО</a>
+          <a href="#">ТФОМС</a>
+          <a href="#">Росздравнадзор</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <span>© 2024 «XXI Век» сеть клиник. Все права защищены.</span>
+      <span>Лицензия ЛО-61-01-007089</span>
+    </div>
+  </footer>
+
+</div><!-- /#main-site -->
+
+
+<!-- ═══════════════════════════════════════════
+     ДАШБОРД (виден после логина)
+═══════════════════════════════════════════ -->
+<div id="dashboard">
+
+  <div class="dash-header">
+    <div class="logo">
+      <div class="logo-icon" style="width:40px;height:40px;font-size:11px">XXI<br>Век</div>
+      <div class="logo-text">
+        <strong style="font-size:15px">«XXI Век»</strong>
+        <span>Личный кабинет</span>
+      </div>
+    </div>
+
+    <div class="dash-user">
+      <div class="dash-avatar" id="avatarInitials">Е</div>
+      <div class="dash-user-name" id="dashUserName">elena</div>
+      <button class="btn-logout" onclick="logout()">Выйти</button>
+    </div>
+  </div>
+
+  <div class="dash-body">
+
+    <!-- LEFT: таблица пациентов -->
+    <div class="dash-left">
+      <h2>Панель администратора</h2>
+
+      <div class="patients-table-wrap">
+        <div class="table-toolbar">
+          <h3>Пациенты</h3>
+          <span class="badge">1 пациент</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>ФИО</th>
+              <th>Телефон</th>
+              <th>Логин</th>
+              <th>Статус</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td class="patient-name">Чеснокова Елена Владимировна</td>
+              <td class="patient-phone">+7 918 543-80-68</td>
+              <td><code>elena</code></td>
+              <td><span class="status-badge status-active">Активен</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- RIGHT: чат iframe -->
+    <div class="chat-panel">
+      <h2>Чат-ассистент</h2>
+      <div class="chat-frame-wrap">
+        <iframe src="chat.html" title="Чат помощник клиники XXI Век"></iframe>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /#dashboard -->
+
+
+<!-- ═══════════════════════════════════════════
+     МОДАЛ ВХОДА
+═══════════════════════════════════════════ -->
+<div class="overlay" id="loginOverlay">
+  <div class="modal">
+    <button class="modal-close" onclick="closeLogin()">×</button>
+
+    <div class="modal-logo">
+      <div class="modal-logo-icon">XXI<br>Век</div>
+      <div>
+        <strong>«XXI Век»</strong>
+        <span>Вход в личный кабинет</span>
+      </div>
+    </div>
+
+    <h2>Добро пожаловать</h2>
+    <p class="subtitle">Введите ваши данные для входа</p>
+
+    <div class="form-group">
+      <label for="loginInput">Логин</label>
+      <input type="text" id="loginInput" placeholder="Введите логин" autocomplete="username">
+    </div>
+
+    <div class="form-group">
+      <label for="passwordInput">Пароль</label>
+      <input type="password" id="passwordInput" placeholder="Введите пароль" autocomplete="current-password">
+    </div>
+
+    <button class="btn-login" onclick="doLogin()">Войти</button>
+
+    <div class="error-msg" id="loginError">Неверный логин или пароль</div>
+  </div>
+</div>
+
+
+<script>
+  // ── Пользователи ──
+  const USERS = [
+    { login: 'elena', password: 'root', name: 'Елена Владимировна', initials: 'ЕВ' }
+  ];
+
+  // ── Открыть/закрыть модал входа ──
+  document.getElementById('openLoginBtn').addEventListener('click', openLogin);
+
+  function openLogin() {
+    document.getElementById('loginOverlay').classList.add('open');
+    document.getElementById('loginInput').focus();
+  }
+
+  function closeLogin() {
+    document.getElementById('loginOverlay').classList.remove('open');
+    document.getElementById('loginError').classList.remove('show');
+    document.getElementById('loginInput').value = '';
+    document.getElementById('passwordInput').value = '';
+  }
+
+  // Закрыть при клике на фон
+  document.getElementById('loginOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeLogin();
+  });
+
+  // Enter в полях
+  ['loginInput', 'passwordInput'].forEach(id => {
+    document.getElementById(id).addEventListener('keydown', e => {
+      if (e.key === 'Enter') doLogin();
+    });
+  });
+
+  // ── Логин ──
+  function doLogin() {
+    const login = document.getElementById('loginInput').value.trim();
+    const password = document.getElementById('passwordInput').value;
+    const user = USERS.find(u => u.login === login && u.password === password);
+
+    if (!user) {
+      document.getElementById('loginError').classList.add('show');
+      document.getElementById('passwordInput').value = '';
+      document.getElementById('passwordInput').focus();
+      return;
+    }
+
+    closeLogin();
+    document.getElementById('main-site').style.display = 'none';
+    document.getElementById('dashboard').classList.add('open');
+    document.getElementById('dashUserName').textContent = user.name;
+    document.getElementById('avatarInitials').textContent = user.initials;
+  }
+
+  // ── Выход ──
+  function logout() {
+    document.getElementById('dashboard').classList.remove('open');
+    document.getElementById('main-site').style.display = 'block';
+  }
+</script>
+</body>
+</html>
