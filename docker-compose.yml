@@ -25,7 +25,7 @@ services:
       DB_USER: root
       DB_PASSWORD: root
       DB_NAME: med
-    env_file:
-      - ./backend/.env
+      GIGACHAT_CREDENTIALS: MDE5Y2U2YjEtY2VmNi03NjhhLWIzZGUtZmYxYmZlMDQwMTVlOjVkMmFlMTYyLTljZTEtNDdhMy04ZTJhLTA1MDNhNGIyN2VlOA==
+      GIGACHAT_SCOPE: GIGACHAT_API_PERS
     extra_hosts:
       - "host.docker.internal:host-gateway"
