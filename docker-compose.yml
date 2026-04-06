@@ -27,6 +27,7 @@ services:
       DB_NAME: med
       GIGACHAT_CREDENTIALS: MDE5Y2U2YjEtY2VmNi03NjhhLWIzZGUtZmYxYmZlMDQwMTVlOjVkMmFlMTYyLTljZTEtNDdhMy04ZTJhLTA1MDNhNGIyN2VlOA==
       GIGACHAT_SCOPE: GIGACHAT_API_PERS
+      OPENAI_API_KEY: dummy
     depends_on:
       db:
         condition: service_healthy
