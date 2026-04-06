@@ -176,7 +176,7 @@
   const SESSION_ID   = _params.get('session')      || 'site-' + Math.random().toString(36).slice(2, 9);
   const CLIENT_ID    = _params.get('clientId') ? Number(_params.get('clientId')) : null;
   const CLINIC_NET_ID = _params.get('clinicNetId') ? Number(_params.get('clinicNetId')) : null;
-  const API = 'http://localhost:3000/chat/message';
+  const API = '/api/chat/message';
   const messagesEl = document.getElementById('messages');
   const input = document.getElementById('userInput');
   const sendBtn = document.getElementById('sendBtn');

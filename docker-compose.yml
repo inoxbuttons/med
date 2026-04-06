@@ -1,0 +1,31 @@
+services:
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./site:/var/www/site:ro
+    depends_on:
+      - site
+      - backend
+
+  site:
+    build: ./site
+    volumes:
+      - ./site:/var/www/site:ro
+
+  backend:
+    build: ./backend
+    environment:
+      PORT: 3000
+      DB_HOST: host.docker.internal
+      DB_PORT: 5432
+      DB_USER: root
+      DB_PASSWORD: root
+      DB_NAME: med
+    env_file:
+      - ./backend/.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
