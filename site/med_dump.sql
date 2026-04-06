@@ -2,7 +2,6 @@
 -- PostgreSQL database dump
 --
 
-\restrict Nm5FpNRfdH8VWhwSseKmYhIyuY3Ad0RT9GejnGB4IRkpeOGldRxafhg8wabQSIM
 
 -- Dumped from database version 16.13 (Homebrew)
 -- Dumped by pg_dump version 16.13 (Homebrew)
@@ -26,14 +25,14 @@ CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 
 
 --
--- Name: EXTENSION vector; Type: COMMENT; Schema: -; Owner: 
+-- Name: EXTENSION vector; Type: COMMENT; Schema: -; Owner: -
 --
 
 COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';
 
 
 --
--- Name: doctor_exception_type; Type: TYPE; Schema: public; Owner: root
+-- Name: doctor_exception_type; Type: TYPE; Schema: public; Owner: -
 --
 
 CREATE TYPE public.doctor_exception_type AS ENUM (
@@ -45,14 +44,12 @@ CREATE TYPE public.doctor_exception_type AS ENUM (
 );
 
 
-ALTER TYPE public.doctor_exception_type OWNER TO root;
-
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
 
 --
--- Name: appointments; Type: TABLE; Schema: public; Owner: root
+-- Name: appointments; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.appointments (
@@ -72,10 +69,8 @@ CREATE TABLE public.appointments (
 );
 
 
-ALTER TABLE public.appointments OWNER TO root;
-
 --
--- Name: appointments_id_seq; Type: SEQUENCE; Schema: public; Owner: root
+-- Name: appointments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.appointments_id_seq
@@ -87,17 +82,15 @@ CREATE SEQUENCE public.appointments_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.appointments_id_seq OWNER TO root;
-
 --
--- Name: appointments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: root
+-- Name: appointments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.appointments_id_seq OWNED BY public.appointments.id;
 
 
 --
--- Name: clinic_nets; Type: TABLE; Schema: public; Owner: root
+-- Name: clinic_nets; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.clinic_nets (
@@ -110,10 +103,8 @@ CREATE TABLE public.clinic_nets (
 );
 
 
-ALTER TABLE public.clinic_nets OWNER TO root;
-
 --
--- Name: clinic_nets_id_seq; Type: SEQUENCE; Schema: public; Owner: root
+-- Name: clinic_nets_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.clinic_nets_id_seq
@@ -125,17 +116,15 @@ CREATE SEQUENCE public.clinic_nets_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.clinic_nets_id_seq OWNER TO root;
-
 --
--- Name: clinic_nets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: root
+-- Name: clinic_nets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.clinic_nets_id_seq OWNED BY public.clinic_nets.id;
 
 
 --
--- Name: clinic_patients; Type: TABLE; Schema: public; Owner: root
+-- Name: clinic_patients; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.clinic_patients (
@@ -148,10 +137,8 @@ CREATE TABLE public.clinic_patients (
 );
 
 
-ALTER TABLE public.clinic_patients OWNER TO root;
-
 --
--- Name: clinic_patients_id_seq; Type: SEQUENCE; Schema: public; Owner: root
+-- Name: clinic_patients_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.clinic_patients_id_seq
@@ -163,17 +150,15 @@ CREATE SEQUENCE public.clinic_patients_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.clinic_patients_id_seq OWNER TO root;
-
 --
--- Name: clinic_patients_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: root
+-- Name: clinic_patients_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.clinic_patients_id_seq OWNED BY public.clinic_patients.id;
 
 
 --
--- Name: clinics; Type: TABLE; Schema: public; Owner: root
+-- Name: clinics; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.clinics (
@@ -190,10 +175,8 @@ CREATE TABLE public.clinics (
 );
 
 
-ALTER TABLE public.clinics OWNER TO root;
-
 --
--- Name: clinics_id_seq; Type: SEQUENCE; Schema: public; Owner: root
+-- Name: clinics_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.clinics_id_seq
@@ -205,17 +188,15 @@ CREATE SEQUENCE public.clinics_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.clinics_id_seq OWNER TO root;
-
 --
--- Name: clinics_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: root
+-- Name: clinics_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.clinics_id_seq OWNED BY public.clinics.id;
 
 
 --
--- Name: doctor_exceptions; Type: TABLE; Schema: public; Owner: root
+-- Name: doctor_exceptions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.doctor_exceptions (
@@ -231,10 +212,8 @@ CREATE TABLE public.doctor_exceptions (
 );
 
 
-ALTER TABLE public.doctor_exceptions OWNER TO root;
-
 --
--- Name: doctor_exceptions_id_seq; Type: SEQUENCE; Schema: public; Owner: root
+-- Name: doctor_exceptions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.doctor_exceptions_id_seq
@@ -246,17 +225,15 @@ CREATE SEQUENCE public.doctor_exceptions_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.doctor_exceptions_id_seq OWNER TO root;
-
 --
--- Name: doctor_exceptions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: root
+-- Name: doctor_exceptions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.doctor_exceptions_id_seq OWNED BY public.doctor_exceptions.id;
 
 
 --
--- Name: doctor_locations; Type: TABLE; Schema: public; Owner: root
+-- Name: doctor_locations; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.doctor_locations (
@@ -267,10 +244,8 @@ CREATE TABLE public.doctor_locations (
 );
 
 
-ALTER TABLE public.doctor_locations OWNER TO root;
-
 --
--- Name: doctor_locations_id_seq; Type: SEQUENCE; Schema: public; Owner: root
+-- Name: doctor_locations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.doctor_locations_id_seq
@@ -282,17 +257,15 @@ CREATE SEQUENCE public.doctor_locations_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.doctor_locations_id_seq OWNER TO root;
-
 --
--- Name: doctor_locations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: root
+-- Name: doctor_locations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.doctor_locations_id_seq OWNED BY public.doctor_locations.id;
 
 
 --
--- Name: doctor_working_hours; Type: TABLE; Schema: public; Owner: root
+-- Name: doctor_working_hours; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.doctor_working_hours (
@@ -312,10 +285,8 @@ CREATE TABLE public.doctor_working_hours (
 );
 
 
-ALTER TABLE public.doctor_working_hours OWNER TO root;
-
 --
--- Name: doctor_working_hours_id_seq; Type: SEQUENCE; Schema: public; Owner: root
+-- Name: doctor_working_hours_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.doctor_working_hours_id_seq
@@ -327,17 +298,15 @@ CREATE SEQUENCE public.doctor_working_hours_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.doctor_working_hours_id_seq OWNER TO root;
-
 --
--- Name: doctor_working_hours_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: root
+-- Name: doctor_working_hours_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.doctor_working_hours_id_seq OWNED BY public.doctor_working_hours.id;
 
 
 --
--- Name: doctors; Type: TABLE; Schema: public; Owner: root
+-- Name: doctors; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.doctors (
@@ -351,10 +320,8 @@ CREATE TABLE public.doctors (
 );
 
 
-ALTER TABLE public.doctors OWNER TO root;
-
 --
--- Name: doctors_id_seq; Type: SEQUENCE; Schema: public; Owner: root
+-- Name: doctors_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.doctors_id_seq
@@ -366,17 +333,15 @@ CREATE SEQUENCE public.doctors_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.doctors_id_seq OWNER TO root;
-
 --
--- Name: doctors_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: root
+-- Name: doctors_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.doctors_id_seq OWNED BY public.doctors.id;
 
 
 --
--- Name: med_fields; Type: TABLE; Schema: public; Owner: root
+-- Name: med_fields; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.med_fields (
@@ -388,10 +353,8 @@ CREATE TABLE public.med_fields (
 );
 
 
-ALTER TABLE public.med_fields OWNER TO root;
-
 --
--- Name: med_fields_id_seq; Type: SEQUENCE; Schema: public; Owner: root
+-- Name: med_fields_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.med_fields_id_seq
@@ -403,17 +366,15 @@ CREATE SEQUENCE public.med_fields_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.med_fields_id_seq OWNER TO root;
-
 --
--- Name: med_fields_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: root
+-- Name: med_fields_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.med_fields_id_seq OWNED BY public.med_fields.id;
 
 
 --
--- Name: persons; Type: TABLE; Schema: public; Owner: root
+-- Name: persons; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.persons (
@@ -427,10 +388,8 @@ CREATE TABLE public.persons (
 );
 
 
-ALTER TABLE public.persons OWNER TO root;
-
 --
--- Name: persons_id_seq; Type: SEQUENCE; Schema: public; Owner: root
+-- Name: persons_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.persons_id_seq
@@ -442,17 +401,15 @@ CREATE SEQUENCE public.persons_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.persons_id_seq OWNER TO root;
-
 --
--- Name: persons_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: root
+-- Name: persons_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.persons_id_seq OWNED BY public.persons.id;
 
 
 --
--- Name: service_appointments; Type: TABLE; Schema: public; Owner: root
+-- Name: service_appointments; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.service_appointments (
@@ -470,10 +427,8 @@ CREATE TABLE public.service_appointments (
 );
 
 
-ALTER TABLE public.service_appointments OWNER TO root;
-
 --
--- Name: service_appointments_id_seq; Type: SEQUENCE; Schema: public; Owner: root
+-- Name: service_appointments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.service_appointments_id_seq
@@ -485,17 +440,15 @@ CREATE SEQUENCE public.service_appointments_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.service_appointments_id_seq OWNER TO root;
-
 --
--- Name: service_appointments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: root
+-- Name: service_appointments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.service_appointments_id_seq OWNED BY public.service_appointments.id;
 
 
 --
--- Name: service_exceptions; Type: TABLE; Schema: public; Owner: root
+-- Name: service_exceptions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.service_exceptions (
@@ -511,10 +464,8 @@ CREATE TABLE public.service_exceptions (
 );
 
 
-ALTER TABLE public.service_exceptions OWNER TO root;
-
 --
--- Name: service_exceptions_id_seq; Type: SEQUENCE; Schema: public; Owner: root
+-- Name: service_exceptions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.service_exceptions_id_seq
@@ -526,17 +477,15 @@ CREATE SEQUENCE public.service_exceptions_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.service_exceptions_id_seq OWNER TO root;
-
 --
--- Name: service_exceptions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: root
+-- Name: service_exceptions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.service_exceptions_id_seq OWNED BY public.service_exceptions.id;
 
 
 --
--- Name: service_schedule; Type: TABLE; Schema: public; Owner: root
+-- Name: service_schedule; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.service_schedule (
@@ -554,10 +503,8 @@ CREATE TABLE public.service_schedule (
 );
 
 
-ALTER TABLE public.service_schedule OWNER TO root;
-
 --
--- Name: service_schedule_id_seq; Type: SEQUENCE; Schema: public; Owner: root
+-- Name: service_schedule_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.service_schedule_id_seq
@@ -569,17 +516,15 @@ CREATE SEQUENCE public.service_schedule_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.service_schedule_id_seq OWNER TO root;
-
 --
--- Name: service_schedule_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: root
+-- Name: service_schedule_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.service_schedule_id_seq OWNED BY public.service_schedule.id;
 
 
 --
--- Name: service_working_hours; Type: TABLE; Schema: public; Owner: root
+-- Name: service_working_hours; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.service_working_hours (
@@ -599,10 +544,8 @@ CREATE TABLE public.service_working_hours (
 );
 
 
-ALTER TABLE public.service_working_hours OWNER TO root;
-
 --
--- Name: service_working_hours_id_seq; Type: SEQUENCE; Schema: public; Owner: root
+-- Name: service_working_hours_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.service_working_hours_id_seq
@@ -614,17 +557,15 @@ CREATE SEQUENCE public.service_working_hours_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.service_working_hours_id_seq OWNER TO root;
-
 --
--- Name: service_working_hours_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: root
+-- Name: service_working_hours_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.service_working_hours_id_seq OWNED BY public.service_working_hours.id;
 
 
 --
--- Name: services; Type: TABLE; Schema: public; Owner: root
+-- Name: services; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.services (
@@ -636,10 +577,8 @@ CREATE TABLE public.services (
 );
 
 
-ALTER TABLE public.services OWNER TO root;
-
 --
--- Name: services_by_clinics; Type: TABLE; Schema: public; Owner: root
+-- Name: services_by_clinics; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.services_by_clinics (
@@ -651,10 +590,8 @@ CREATE TABLE public.services_by_clinics (
 );
 
 
-ALTER TABLE public.services_by_clinics OWNER TO root;
-
 --
--- Name: services_id_seq; Type: SEQUENCE; Schema: public; Owner: root
+-- Name: services_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.services_id_seq
@@ -666,17 +603,15 @@ CREATE SEQUENCE public.services_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.services_id_seq OWNER TO root;
-
 --
--- Name: services_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: root
+-- Name: services_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.services_id_seq OWNED BY public.services.id;
 
 
 --
--- Name: specialities; Type: TABLE; Schema: public; Owner: root
+-- Name: specialities; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.specialities (
@@ -690,10 +625,8 @@ CREATE TABLE public.specialities (
 );
 
 
-ALTER TABLE public.specialities OWNER TO root;
-
 --
--- Name: specialities_id_seq; Type: SEQUENCE; Schema: public; Owner: root
+-- Name: specialities_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.specialities_id_seq
@@ -705,129 +638,127 @@ CREATE SEQUENCE public.specialities_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.specialities_id_seq OWNER TO root;
-
 --
--- Name: specialities_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: root
+-- Name: specialities_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.specialities_id_seq OWNED BY public.specialities.id;
 
 
 --
--- Name: appointments id; Type: DEFAULT; Schema: public; Owner: root
+-- Name: appointments id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.appointments ALTER COLUMN id SET DEFAULT nextval('public.appointments_id_seq'::regclass);
 
 
 --
--- Name: clinic_nets id; Type: DEFAULT; Schema: public; Owner: root
+-- Name: clinic_nets id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.clinic_nets ALTER COLUMN id SET DEFAULT nextval('public.clinic_nets_id_seq'::regclass);
 
 
 --
--- Name: clinic_patients id; Type: DEFAULT; Schema: public; Owner: root
+-- Name: clinic_patients id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.clinic_patients ALTER COLUMN id SET DEFAULT nextval('public.clinic_patients_id_seq'::regclass);
 
 
 --
--- Name: clinics id; Type: DEFAULT; Schema: public; Owner: root
+-- Name: clinics id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.clinics ALTER COLUMN id SET DEFAULT nextval('public.clinics_id_seq'::regclass);
 
 
 --
--- Name: doctor_exceptions id; Type: DEFAULT; Schema: public; Owner: root
+-- Name: doctor_exceptions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.doctor_exceptions ALTER COLUMN id SET DEFAULT nextval('public.doctor_exceptions_id_seq'::regclass);
 
 
 --
--- Name: doctor_locations id; Type: DEFAULT; Schema: public; Owner: root
+-- Name: doctor_locations id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.doctor_locations ALTER COLUMN id SET DEFAULT nextval('public.doctor_locations_id_seq'::regclass);
 
 
 --
--- Name: doctor_working_hours id; Type: DEFAULT; Schema: public; Owner: root
+-- Name: doctor_working_hours id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.doctor_working_hours ALTER COLUMN id SET DEFAULT nextval('public.doctor_working_hours_id_seq'::regclass);
 
 
 --
--- Name: doctors id; Type: DEFAULT; Schema: public; Owner: root
+-- Name: doctors id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.doctors ALTER COLUMN id SET DEFAULT nextval('public.doctors_id_seq'::regclass);
 
 
 --
--- Name: med_fields id; Type: DEFAULT; Schema: public; Owner: root
+-- Name: med_fields id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.med_fields ALTER COLUMN id SET DEFAULT nextval('public.med_fields_id_seq'::regclass);
 
 
 --
--- Name: persons id; Type: DEFAULT; Schema: public; Owner: root
+-- Name: persons id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.persons ALTER COLUMN id SET DEFAULT nextval('public.persons_id_seq'::regclass);
 
 
 --
--- Name: service_appointments id; Type: DEFAULT; Schema: public; Owner: root
+-- Name: service_appointments id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.service_appointments ALTER COLUMN id SET DEFAULT nextval('public.service_appointments_id_seq'::regclass);
 
 
 --
--- Name: service_exceptions id; Type: DEFAULT; Schema: public; Owner: root
+-- Name: service_exceptions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.service_exceptions ALTER COLUMN id SET DEFAULT nextval('public.service_exceptions_id_seq'::regclass);
 
 
 --
--- Name: service_schedule id; Type: DEFAULT; Schema: public; Owner: root
+-- Name: service_schedule id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.service_schedule ALTER COLUMN id SET DEFAULT nextval('public.service_schedule_id_seq'::regclass);
 
 
 --
--- Name: service_working_hours id; Type: DEFAULT; Schema: public; Owner: root
+-- Name: service_working_hours id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.service_working_hours ALTER COLUMN id SET DEFAULT nextval('public.service_working_hours_id_seq'::regclass);
 
 
 --
--- Name: services id; Type: DEFAULT; Schema: public; Owner: root
+-- Name: services id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.services ALTER COLUMN id SET DEFAULT nextval('public.services_id_seq'::regclass);
 
 
 --
--- Name: specialities id; Type: DEFAULT; Schema: public; Owner: root
+-- Name: specialities id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.specialities ALTER COLUMN id SET DEFAULT nextval('public.specialities_id_seq'::regclass);
 
 
 --
--- Data for Name: appointments; Type: TABLE DATA; Schema: public; Owner: root
+-- Data for Name: appointments; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.appointments (id, doctor_id, service_id, clinic_id, start_time, end_time, created_at, patient_id, status, source, comment, updated_at) FROM stdin;
@@ -853,7 +784,7 @@ COPY public.appointments (id, doctor_id, service_id, clinic_id, start_time, end_
 
 
 --
--- Data for Name: clinic_nets; Type: TABLE DATA; Schema: public; Owner: root
+-- Data for Name: clinic_nets; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.clinic_nets (id, name, description, website, created_at, updated_at) FROM stdin;
@@ -862,7 +793,7 @@ COPY public.clinic_nets (id, name, description, website, created_at, updated_at)
 
 
 --
--- Data for Name: clinic_patients; Type: TABLE DATA; Schema: public; Owner: root
+-- Data for Name: clinic_patients; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.clinic_patients (id, person_id, clinic_id, external_id, card_number, created_at) FROM stdin;
@@ -872,7 +803,7 @@ COPY public.clinic_patients (id, person_id, clinic_id, external_id, card_number,
 
 
 --
--- Data for Name: clinics; Type: TABLE DATA; Schema: public; Owner: root
+-- Data for Name: clinics; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.clinics (id, clinic_net_id, name, address, phone, email, latitude, longitude, created_at, updated_at) FROM stdin;
@@ -882,7 +813,7 @@ COPY public.clinics (id, clinic_net_id, name, address, phone, email, latitude, l
 
 
 --
--- Data for Name: doctor_exceptions; Type: TABLE DATA; Schema: public; Owner: root
+-- Data for Name: doctor_exceptions; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.doctor_exceptions (id, doctor_id, date, start_time, end_time, type, comment, created_at, updated_at) FROM stdin;
@@ -942,7 +873,7 @@ COPY public.doctor_exceptions (id, doctor_id, date, start_time, end_time, type, 
 
 
 --
--- Data for Name: doctor_locations; Type: TABLE DATA; Schema: public; Owner: root
+-- Data for Name: doctor_locations; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.doctor_locations (id, doctor_id, clinic_id, price) FROM stdin;
@@ -1021,7 +952,7 @@ COPY public.doctor_locations (id, doctor_id, clinic_id, price) FROM stdin;
 
 
 --
--- Data for Name: doctor_working_hours; Type: TABLE DATA; Schema: public; Owner: root
+-- Data for Name: doctor_working_hours; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.doctor_working_hours (id, doctor_id, clinic_id, day_of_week, start_time, end_time, slot_duration, break_start, break_end, is_active, created_at, updated_at) FROM stdin;
@@ -1289,7 +1220,7 @@ COPY public.doctor_working_hours (id, doctor_id, clinic_id, day_of_week, start_t
 
 
 --
--- Data for Name: doctors; Type: TABLE DATA; Schema: public; Owner: root
+-- Data for Name: doctors; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.doctors (id, speciality_id, name, photo_url, profile_url, created_at, updated_at) FROM stdin;
@@ -1349,7 +1280,7 @@ COPY public.doctors (id, speciality_id, name, photo_url, profile_url, created_at
 
 
 --
--- Data for Name: med_fields; Type: TABLE DATA; Schema: public; Owner: root
+-- Data for Name: med_fields; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.med_fields (id, name, description, created_at, updated_at) FROM stdin;
@@ -1380,7 +1311,7 @@ COPY public.med_fields (id, name, description, created_at, updated_at) FROM stdi
 
 
 --
--- Data for Name: persons; Type: TABLE DATA; Schema: public; Owner: root
+-- Data for Name: persons; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.persons (id, first_name, last_name, phone, email, birth_date, created_at) FROM stdin;
@@ -1389,7 +1320,7 @@ COPY public.persons (id, first_name, last_name, phone, email, birth_date, create
 
 
 --
--- Data for Name: service_appointments; Type: TABLE DATA; Schema: public; Owner: root
+-- Data for Name: service_appointments; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.service_appointments (id, service_id, clinic_id, patient_id, start_time, end_time, status, source, comment, created_at, updated_at) FROM stdin;
@@ -1399,7 +1330,7 @@ COPY public.service_appointments (id, service_id, clinic_id, patient_id, start_t
 
 
 --
--- Data for Name: service_exceptions; Type: TABLE DATA; Schema: public; Owner: root
+-- Data for Name: service_exceptions; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.service_exceptions (id, service_id, date, start_time, end_time, type, comment, created_at, updated_at) FROM stdin;
@@ -2001,7 +1932,7 @@ COPY public.service_exceptions (id, service_id, date, start_time, end_time, type
 
 
 --
--- Data for Name: service_schedule; Type: TABLE DATA; Schema: public; Owner: root
+-- Data for Name: service_schedule; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.service_schedule (id, service_id, clinic_id, day_of_week, start_time, end_time, valid_from, valid_to, created_at, updated_at) FROM stdin;
@@ -7949,7 +7880,7 @@ COPY public.service_schedule (id, service_id, clinic_id, day_of_week, start_time
 
 
 --
--- Data for Name: service_working_hours; Type: TABLE DATA; Schema: public; Owner: root
+-- Data for Name: service_working_hours; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.service_working_hours (id, service_id, clinic_id, day_of_week, start_time, end_time, slot_duration, break_start, break_end, is_active, created_at, updated_at) FROM stdin;
@@ -13897,7 +13828,7 @@ COPY public.service_working_hours (id, service_id, clinic_id, day_of_week, start
 
 
 --
--- Data for Name: services; Type: TABLE DATA; Schema: public; Owner: root
+-- Data for Name: services; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.services (id, med_field_id, name, description, embedding) FROM stdin;
@@ -14499,7 +14430,7 @@ COPY public.services (id, med_field_id, name, description, embedding) FROM stdin
 
 
 --
--- Data for Name: services_by_clinics; Type: TABLE DATA; Schema: public; Owner: root
+-- Data for Name: services_by_clinics; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.services_by_clinics (service_id, clinic_id, price, created_at, updated_at) FROM stdin;
@@ -15695,7 +15626,7 @@ COPY public.services_by_clinics (service_id, clinic_id, price, created_at, updat
 
 
 --
--- Data for Name: specialities; Type: TABLE DATA; Schema: public; Owner: root
+-- Data for Name: specialities; Type: TABLE DATA; Schema: public; Owner: -
 --
 
 COPY public.specialities (id, med_field_id, name, description, created_at, updated_at, embedding) FROM stdin;
@@ -15743,119 +15674,119 @@ COPY public.specialities (id, med_field_id, name, description, created_at, updat
 
 
 --
--- Name: appointments_id_seq; Type: SEQUENCE SET; Schema: public; Owner: root
+-- Name: appointments_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.appointments_id_seq', 40, true);
 
 
 --
--- Name: clinic_nets_id_seq; Type: SEQUENCE SET; Schema: public; Owner: root
+-- Name: clinic_nets_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.clinic_nets_id_seq', 1, true);
 
 
 --
--- Name: clinic_patients_id_seq; Type: SEQUENCE SET; Schema: public; Owner: root
+-- Name: clinic_patients_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.clinic_patients_id_seq', 2, true);
 
 
 --
--- Name: clinics_id_seq; Type: SEQUENCE SET; Schema: public; Owner: root
+-- Name: clinics_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.clinics_id_seq', 2, true);
 
 
 --
--- Name: doctor_exceptions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: root
+-- Name: doctor_exceptions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.doctor_exceptions_id_seq', 52, true);
 
 
 --
--- Name: doctor_locations_id_seq; Type: SEQUENCE SET; Schema: public; Owner: root
+-- Name: doctor_locations_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.doctor_locations_id_seq', 71, true);
 
 
 --
--- Name: doctor_working_hours_id_seq; Type: SEQUENCE SET; Schema: public; Owner: root
+-- Name: doctor_working_hours_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.doctor_working_hours_id_seq', 260, true);
 
 
 --
--- Name: doctors_id_seq; Type: SEQUENCE SET; Schema: public; Owner: root
+-- Name: doctors_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.doctors_id_seq', 52, true);
 
 
 --
--- Name: med_fields_id_seq; Type: SEQUENCE SET; Schema: public; Owner: root
+-- Name: med_fields_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.med_fields_id_seq', 23, true);
 
 
 --
--- Name: persons_id_seq; Type: SEQUENCE SET; Schema: public; Owner: root
+-- Name: persons_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.persons_id_seq', 1, true);
 
 
 --
--- Name: service_appointments_id_seq; Type: SEQUENCE SET; Schema: public; Owner: root
+-- Name: service_appointments_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.service_appointments_id_seq', 2, true);
 
 
 --
--- Name: service_exceptions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: root
+-- Name: service_exceptions_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.service_exceptions_id_seq', 594, true);
 
 
 --
--- Name: service_schedule_id_seq; Type: SEQUENCE SET; Schema: public; Owner: root
+-- Name: service_schedule_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.service_schedule_id_seq', 5940, true);
 
 
 --
--- Name: service_working_hours_id_seq; Type: SEQUENCE SET; Schema: public; Owner: root
+-- Name: service_working_hours_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.service_working_hours_id_seq', 5940, true);
 
 
 --
--- Name: services_id_seq; Type: SEQUENCE SET; Schema: public; Owner: root
+-- Name: services_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.services_id_seq', 594, true);
 
 
 --
--- Name: specialities_id_seq; Type: SEQUENCE SET; Schema: public; Owner: root
+-- Name: specialities_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
 SELECT pg_catalog.setval('public.specialities_id_seq', 40, true);
 
 
 --
--- Name: appointments appointments_pkey; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: appointments appointments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.appointments
@@ -15863,7 +15794,7 @@ ALTER TABLE ONLY public.appointments
 
 
 --
--- Name: clinic_nets clinic_nets_pkey; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: clinic_nets clinic_nets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.clinic_nets
@@ -15871,7 +15802,7 @@ ALTER TABLE ONLY public.clinic_nets
 
 
 --
--- Name: clinic_patients clinic_patients_person_id_clinic_id_key; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: clinic_patients clinic_patients_person_id_clinic_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.clinic_patients
@@ -15879,7 +15810,7 @@ ALTER TABLE ONLY public.clinic_patients
 
 
 --
--- Name: clinic_patients clinic_patients_pkey; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: clinic_patients clinic_patients_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.clinic_patients
@@ -15887,7 +15818,7 @@ ALTER TABLE ONLY public.clinic_patients
 
 
 --
--- Name: clinics clinics_pkey; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: clinics clinics_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.clinics
@@ -15895,7 +15826,7 @@ ALTER TABLE ONLY public.clinics
 
 
 --
--- Name: doctor_exceptions doctor_exceptions_pkey; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: doctor_exceptions doctor_exceptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.doctor_exceptions
@@ -15903,7 +15834,7 @@ ALTER TABLE ONLY public.doctor_exceptions
 
 
 --
--- Name: doctor_locations doctor_locations_doctor_id_clinic_id_key; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: doctor_locations doctor_locations_doctor_id_clinic_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.doctor_locations
@@ -15911,7 +15842,7 @@ ALTER TABLE ONLY public.doctor_locations
 
 
 --
--- Name: doctor_locations doctor_locations_pkey; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: doctor_locations doctor_locations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.doctor_locations
@@ -15919,7 +15850,7 @@ ALTER TABLE ONLY public.doctor_locations
 
 
 --
--- Name: doctor_working_hours doctor_working_hours_pkey; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: doctor_working_hours doctor_working_hours_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.doctor_working_hours
@@ -15927,7 +15858,7 @@ ALTER TABLE ONLY public.doctor_working_hours
 
 
 --
--- Name: doctors doctors_pkey; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: doctors doctors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.doctors
@@ -15935,7 +15866,7 @@ ALTER TABLE ONLY public.doctors
 
 
 --
--- Name: med_fields med_fields_name_key; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: med_fields med_fields_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.med_fields
@@ -15943,7 +15874,7 @@ ALTER TABLE ONLY public.med_fields
 
 
 --
--- Name: med_fields med_fields_pkey; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: med_fields med_fields_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.med_fields
@@ -15951,7 +15882,7 @@ ALTER TABLE ONLY public.med_fields
 
 
 --
--- Name: persons persons_pkey; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: persons persons_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.persons
@@ -15959,7 +15890,7 @@ ALTER TABLE ONLY public.persons
 
 
 --
--- Name: service_appointments service_appointments_pkey; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: service_appointments service_appointments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.service_appointments
@@ -15967,7 +15898,7 @@ ALTER TABLE ONLY public.service_appointments
 
 
 --
--- Name: service_exceptions service_exceptions_pkey; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: service_exceptions service_exceptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.service_exceptions
@@ -15975,7 +15906,7 @@ ALTER TABLE ONLY public.service_exceptions
 
 
 --
--- Name: service_schedule service_schedule_pkey; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: service_schedule service_schedule_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.service_schedule
@@ -15983,7 +15914,7 @@ ALTER TABLE ONLY public.service_schedule
 
 
 --
--- Name: service_working_hours service_working_hours_pkey; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: service_working_hours service_working_hours_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.service_working_hours
@@ -15991,7 +15922,7 @@ ALTER TABLE ONLY public.service_working_hours
 
 
 --
--- Name: services_by_clinics services_by_clinics_pkey; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: services_by_clinics services_by_clinics_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.services_by_clinics
@@ -15999,7 +15930,7 @@ ALTER TABLE ONLY public.services_by_clinics
 
 
 --
--- Name: services services_pkey; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: services services_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.services
@@ -16007,7 +15938,7 @@ ALTER TABLE ONLY public.services
 
 
 --
--- Name: specialities specialities_pkey; Type: CONSTRAINT; Schema: public; Owner: root
+-- Name: specialities specialities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.specialities
@@ -16015,196 +15946,196 @@ ALTER TABLE ONLY public.specialities
 
 
 --
--- Name: idx_appt_clinic; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_appt_clinic; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_appt_clinic ON public.appointments USING btree (clinic_id, start_time);
 
 
 --
--- Name: idx_appt_doctor; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_appt_doctor; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_appt_doctor ON public.appointments USING btree (doctor_id, start_time);
 
 
 --
--- Name: idx_appt_service; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_appt_service; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_appt_service ON public.appointments USING btree (service_id, start_time);
 
 
 --
--- Name: idx_clinics_net; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_clinics_net; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_clinics_net ON public.clinics USING btree (clinic_net_id);
 
 
 --
--- Name: idx_cp_clinic; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_cp_clinic; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_cp_clinic ON public.clinic_patients USING btree (clinic_id);
 
 
 --
--- Name: idx_cp_person; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_cp_person; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_cp_person ON public.clinic_patients USING btree (person_id);
 
 
 --
--- Name: idx_de_date; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_de_date; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_de_date ON public.doctor_exceptions USING btree (date);
 
 
 --
--- Name: idx_de_doctor_id; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_de_doctor_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_de_doctor_id ON public.doctor_exceptions USING btree (doctor_id);
 
 
 --
--- Name: idx_doctors_spec; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_doctors_spec; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_doctors_spec ON public.doctors USING btree (speciality_id);
 
 
 --
--- Name: idx_dwh_clinic_id; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_dwh_clinic_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_dwh_clinic_id ON public.doctor_working_hours USING btree (clinic_id);
 
 
 --
--- Name: idx_dwh_day; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_dwh_day; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_dwh_day ON public.doctor_working_hours USING btree (day_of_week);
 
 
 --
--- Name: idx_dwh_doctor_id; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_dwh_doctor_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_dwh_doctor_id ON public.doctor_working_hours USING btree (doctor_id);
 
 
 --
--- Name: idx_persons_email; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_persons_email; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_persons_email ON public.persons USING btree (email);
 
 
 --
--- Name: idx_persons_phone; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_persons_phone; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_persons_phone ON public.persons USING btree (phone);
 
 
 --
--- Name: idx_sa_clinic; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_sa_clinic; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_sa_clinic ON public.service_appointments USING btree (clinic_id, start_time);
 
 
 --
--- Name: idx_sa_service; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_sa_service; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_sa_service ON public.service_appointments USING btree (service_id, start_time);
 
 
 --
--- Name: idx_se_date; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_se_date; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_se_date ON public.service_exceptions USING btree (date);
 
 
 --
--- Name: idx_se_service; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_se_service; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_se_service ON public.service_exceptions USING btree (service_id);
 
 
 --
--- Name: idx_services_embedding; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_services_embedding; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_services_embedding ON public.services USING hnsw (embedding public.vector_cosine_ops);
 
 
 --
--- Name: idx_services_field; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_services_field; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_services_field ON public.services USING btree (med_field_id);
 
 
 --
--- Name: idx_spec_field; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_spec_field; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_spec_field ON public.specialities USING btree (med_field_id);
 
 
 --
--- Name: idx_specialities_embedding; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_specialities_embedding; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_specialities_embedding ON public.specialities USING hnsw (embedding public.vector_cosine_ops);
 
 
 --
--- Name: idx_svc_by_clinic_clinic; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_svc_by_clinic_clinic; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_svc_by_clinic_clinic ON public.services_by_clinics USING btree (clinic_id);
 
 
 --
--- Name: idx_svc_sched_service; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_svc_sched_service; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_svc_sched_service ON public.service_schedule USING btree (service_id);
 
 
 --
--- Name: idx_swh_clinic; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_swh_clinic; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_swh_clinic ON public.service_working_hours USING btree (clinic_id);
 
 
 --
--- Name: idx_swh_day; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_swh_day; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_swh_day ON public.service_working_hours USING btree (day_of_week);
 
 
 --
--- Name: idx_swh_service; Type: INDEX; Schema: public; Owner: root
+-- Name: idx_swh_service; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_swh_service ON public.service_working_hours USING btree (service_id);
 
 
 --
--- Name: appointments appointments_clinic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: appointments appointments_clinic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.appointments
@@ -16212,7 +16143,7 @@ ALTER TABLE ONLY public.appointments
 
 
 --
--- Name: appointments appointments_doctor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: appointments appointments_doctor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.appointments
@@ -16220,7 +16151,7 @@ ALTER TABLE ONLY public.appointments
 
 
 --
--- Name: appointments appointments_service_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: appointments appointments_service_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.appointments
@@ -16228,7 +16159,7 @@ ALTER TABLE ONLY public.appointments
 
 
 --
--- Name: clinic_patients clinic_patients_clinic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: clinic_patients clinic_patients_clinic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.clinic_patients
@@ -16236,7 +16167,7 @@ ALTER TABLE ONLY public.clinic_patients
 
 
 --
--- Name: clinic_patients clinic_patients_person_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: clinic_patients clinic_patients_person_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.clinic_patients
@@ -16244,7 +16175,7 @@ ALTER TABLE ONLY public.clinic_patients
 
 
 --
--- Name: clinics clinics_clinic_net_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: clinics clinics_clinic_net_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.clinics
@@ -16252,7 +16183,7 @@ ALTER TABLE ONLY public.clinics
 
 
 --
--- Name: doctor_exceptions doctor_exceptions_doctor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: doctor_exceptions doctor_exceptions_doctor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.doctor_exceptions
@@ -16260,7 +16191,7 @@ ALTER TABLE ONLY public.doctor_exceptions
 
 
 --
--- Name: doctor_locations doctor_locations_clinic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: doctor_locations doctor_locations_clinic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.doctor_locations
@@ -16268,7 +16199,7 @@ ALTER TABLE ONLY public.doctor_locations
 
 
 --
--- Name: doctor_locations doctor_locations_doctor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: doctor_locations doctor_locations_doctor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.doctor_locations
@@ -16276,7 +16207,7 @@ ALTER TABLE ONLY public.doctor_locations
 
 
 --
--- Name: doctor_working_hours doctor_working_hours_clinic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: doctor_working_hours doctor_working_hours_clinic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.doctor_working_hours
@@ -16284,7 +16215,7 @@ ALTER TABLE ONLY public.doctor_working_hours
 
 
 --
--- Name: doctor_working_hours doctor_working_hours_doctor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: doctor_working_hours doctor_working_hours_doctor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.doctor_working_hours
@@ -16292,7 +16223,7 @@ ALTER TABLE ONLY public.doctor_working_hours
 
 
 --
--- Name: doctors doctors_speciality_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: doctors doctors_speciality_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.doctors
@@ -16300,7 +16231,7 @@ ALTER TABLE ONLY public.doctors
 
 
 --
--- Name: service_appointments service_appointments_clinic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: service_appointments service_appointments_clinic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.service_appointments
@@ -16308,7 +16239,7 @@ ALTER TABLE ONLY public.service_appointments
 
 
 --
--- Name: service_appointments service_appointments_service_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: service_appointments service_appointments_service_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.service_appointments
@@ -16316,7 +16247,7 @@ ALTER TABLE ONLY public.service_appointments
 
 
 --
--- Name: service_exceptions service_exceptions_service_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: service_exceptions service_exceptions_service_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.service_exceptions
@@ -16324,7 +16255,7 @@ ALTER TABLE ONLY public.service_exceptions
 
 
 --
--- Name: service_schedule service_schedule_clinic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: service_schedule service_schedule_clinic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.service_schedule
@@ -16332,7 +16263,7 @@ ALTER TABLE ONLY public.service_schedule
 
 
 --
--- Name: service_schedule service_schedule_service_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: service_schedule service_schedule_service_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.service_schedule
@@ -16340,7 +16271,7 @@ ALTER TABLE ONLY public.service_schedule
 
 
 --
--- Name: service_working_hours service_working_hours_clinic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: service_working_hours service_working_hours_clinic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.service_working_hours
@@ -16348,7 +16279,7 @@ ALTER TABLE ONLY public.service_working_hours
 
 
 --
--- Name: service_working_hours service_working_hours_service_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: service_working_hours service_working_hours_service_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.service_working_hours
@@ -16356,7 +16287,7 @@ ALTER TABLE ONLY public.service_working_hours
 
 
 --
--- Name: services_by_clinics services_by_clinics_clinic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: services_by_clinics services_by_clinics_clinic_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.services_by_clinics
@@ -16364,7 +16295,7 @@ ALTER TABLE ONLY public.services_by_clinics
 
 
 --
--- Name: services_by_clinics services_by_clinics_service_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: services_by_clinics services_by_clinics_service_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.services_by_clinics
@@ -16372,7 +16303,7 @@ ALTER TABLE ONLY public.services_by_clinics
 
 
 --
--- Name: services services_med_field_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: services services_med_field_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.services
@@ -16380,7 +16311,7 @@ ALTER TABLE ONLY public.services
 
 
 --
--- Name: specialities specialities_med_field_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: root
+-- Name: specialities specialities_med_field_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.specialities
@@ -16391,5 +16322,5 @@ ALTER TABLE ONLY public.specialities
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Nm5FpNRfdH8VWhwSseKmYhIyuY3Ad0RT9GejnGB4IRkpeOGldRxafhg8wabQSIM
+\unrestrict gtRnc31E6CGOjL7ckUjFMP9vvazJ3LZ46b4VUHBHcsQdzodChSGZo1TPocgH7gE
 
