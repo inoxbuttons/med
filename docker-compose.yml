@@ -20,12 +20,31 @@ services:
     build: ./backend
     environment:
       PORT: 3000
-      DB_HOST: host.docker.internal
+      DB_HOST: db
       DB_PORT: 5432
       DB_USER: root
       DB_PASSWORD: root
       DB_NAME: med
       GIGACHAT_CREDENTIALS: MDE5Y2U2YjEtY2VmNi03NjhhLWIzZGUtZmYxYmZlMDQwMTVlOjVkMmFlMTYyLTljZTEtNDdhMy04ZTJhLTA1MDNhNGIyN2VlOA==
       GIGACHAT_SCOPE: GIGACHAT_API_PERS
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+      POSTGRES_DB: med
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./site/med_dump.sql:/docker-entrypoint-initdb.d/med_dump.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d med"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
