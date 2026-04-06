@@ -16322,5 +16322,4 @@ ALTER TABLE ONLY public.specialities
 -- PostgreSQL database dump complete
 --
 
-\unrestrict gtRnc31E6CGOjL7ckUjFMP9vvazJ3LZ46b4VUHBHcsQdzodChSGZo1TPocgH7gE
 
