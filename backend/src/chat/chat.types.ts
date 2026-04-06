@@ -38,6 +38,8 @@ export interface PendingConflict {
   newStartTime: string;
 }
 
+export type SessionState = 'idle' | 'conflict_resolution';
+
 export interface SessionData {
   messages: ChatMessage[];
   provider: LlmProvider;
@@ -45,6 +47,7 @@ export interface SessionData {
   clientId?: number;
   clinicNetId?: number;
   pendingConflict?: PendingConflict;
+  state: SessionState;
   createdAt: Date;
   updatedAt: Date;
 }

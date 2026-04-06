@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OpenAiService } from '../llm/openai.service';
@@ -10,6 +12,7 @@ import {
   SendMessageDto,
   SendMessageResponse,
   SessionData,
+  SessionState,
 } from './chat.types';
 
 const MAX_TOOL_ITERATIONS = 10;
@@ -53,56 +56,9 @@ export class ChatService implements OnModuleInit {
     private readonly gigaChat: GigaChatService,
     private readonly booking: BookingService,
   ) {
-    this.systemPrompt = this.config.get<string>(
-      'CHAT_SYSTEM_PROMPT',
-      'Ты — помощник медицинской клиники «XXI Век». Отвечай вежливо и кратко. ' +
-        'Ты помогаешь только по медицинским вопросам: запись к врачу, расписание, услуги клиники, симптомы. ' +
-        'Если вопрос не связан с медициной или клиникой — вежливо ответь: ' +
-        '"Я ассистент медицинского центра «XXI Век» и на такие вопросы отвечать не уполномочен. ' +
-        'Могу помочь записаться к врачу или ответить на вопросы об услугах клиники." ' +
-        'Никогда не придумывай информацию о расписании, клиниках или врачах. ' +
-        'Для вопросов о расписании и записи используй инструменты: find_doctors, get_available_slots, find_available_at_time. ' +
-        'Сценарий новой записи к врачу: ' +
-        '1) вызови find_doctors со специальностью или фамилией врача; ' +
-        '2) если найдено несколько врачей в разных клиниках — уточни у пациента предпочтительную клинику; ' +
-        '3а) если пациент НАЗВАЛ КОНКРЕТНОЕ ВРЕМЯ (например "в 15:00", "в 9 утра", "в полдень") — ' +
-        'СРАЗУ вызови find_available_at_time (без предварительного find_doctors) со speciality, date и time; ' +
-        'если available содержит ОДНОГО врача — переходи к шагу 6 (сводка + подтверждение); ' +
-        'если available содержит НЕСКОЛЬКО врачей — перечисли ВСЕХ (имя + клиника) и спроси у пациента кого выбрать; НЕ выбирай врача самостоятельно; ' +
-        'если available пустой — покажи ближайшие слоты из nearest и предложи выбрать; ' +
-        '3б) если время НЕ указано — вызови get_available_slots с doctorId и mode=day если пациент назвал дату ' +
-        '(или относительную дату: завтра, послезавтра), или mode=nearest если дата не указана; ' +
-        'для "завтра" передавай targetDate="завтра", для "послезавтра" — targetDate="послезавтра"; ' +
-        '4) если слотов нет на запрошенную дату — сразу вызови mode=nearest и предложи ближайшую доступную дату; ' +
-        '5) если слотов много — уточни предпочтительное время (утро/день/вечер) или предложи первые 3–5 вариантов; ' +
-        '6) после выбора пациентом врача и/или времени — ОБЯЗАТЕЛЬНО покажи итоговую информацию (врач, специальность, дата, время, клиника) ' +
-        'и задай вопрос "Подтверждаете запись?" — НЕ вызывай book_appointment до получения явного подтверждения; ' +
-        'выбор врача ("Нестерова", "Шанько") — это НЕ подтверждение, после него нужна сводка и вопрос; ' +
-        'имя пациента спрашивать НЕ нужно — он уже идентифицирован; ' +
-        '7) только после того как пациент ответил "да", "подтверждаю", "записывайте", "конечно" — вызови book_appointment. ' +
-        'Когда пациент спрашивает о своих записях ("покажи мои записи", "мои записи", "когда я записан" и т.п.) — ' +
-        'ВСЕГДА вызывай инструмент get_patient_appointments без лишних вопросов. ' +
-        'Когда пациент хочет отменить запись: сначала вызови find_patient_appointment с параметрами из запроса, ' +
-        'покажи найденную запись пациенту и запроси подтверждение, ' +
-        'только после подтверждения вызови cancel_appointment с id и type из результата. ' +
-        'Когда пациент хочет перенести запись: ' +
-        '1) вызови find_patient_appointment — передавай любые известные параметры: дату (date), день недели (dayOfWeek), ' +
-        'время (time/timeExpression), специальность или имя врача (query); ' +
-        'если пациент указал только дату — передавай только date, без query; ' +
-        'инструмент ищет и среди записей к врачам и среди записей на услуги; ' +
-        '2) если найдено несколько — уточни у пациента какую именно он хочет перенести; ' +
-        '3) спроси пациента на какую дату/время он хочет перенести; ' +
-        '4) вызови get_available_slots с doctorId и clinicId из найденной записи и mode=day для запрошенной даты — ' +
-        'если слотов нет, используй mode=nearest чтобы найти ближайшую доступную дату и предложи её; ' +
-        '5) когда пациент выбрал новое время — покажи полную информацию о новой записи (врач, дата, время, клиника) и запроси подтверждение; ' +
-        '6) после подтверждения: вызови reschedule_appointment — передай oldId и type из find_patient_appointment, ' +
-        'doctorId/serviceId и clinicId из той же записи, newStartTime новой даты и времени. ' +
-        'КРИТИЧЕСКИ ВАЖНО: НИКОГДА не придумывай ID врача или клиники — используй только те ID, ' +
-        'которые вернули инструменты find_doctors, find_services или get_clinics в этом разговоре. ' +
-        'Если ID врача не известен из предыдущих вызовов — ОБЯЗАТЕЛЬНО вызови find_doctors заново. ' +
-        'Когда показываешь результат get_available_slots с mode=nearest: ' +
-        'называй дату, время И название клиники из результата; не упоминай дни в которых слотов нет.',
-    );
+    const promptFile = path.resolve(__dirname, '../prompts/system-prompt.txt');
+    const defaultPrompt = fs.readFileSync(promptFile, 'utf-8').trim();
+    this.systemPrompt = this.config.get<string>('CHAT_SYSTEM_PROMPT', defaultPrompt);
   }
 
   onModuleInit() {
@@ -119,21 +75,42 @@ export class ChatService implements OnModuleInit {
     session.messages.push({ role: 'user', content: message });
     session.updatedAt = new Date();
 
-    // If there's a pending conflict and user says "заменить" — resolve it before LLM call
-    if (session.pendingConflict && /заменить|замените|заменяй/i.test(message)) {
+    // Resolve pending conflict before LLM call, based on user's answer
+    if (session.pendingConflict) {
       const pc = session.pendingConflict;
-      session.pendingConflict = undefined;
-      const rescheduleResult = await this.booking.rescheduleAppointment({
-        oldId: pc.oldId,
-        type: pc.oldType,
-        doctorId: pc.newDoctorId,
-        serviceId: pc.newServiceId,
-        clinicId: pc.newClinicId,
-        newStartTime: pc.newStartTime,
-        patientId: session.clientId,
-      });
-      // Inject as function message so LLM sees the result
-      session.messages.push({ role: 'function', name: 'book_appointment', content: JSON.stringify(rescheduleResult) });
+      if (/замени|заменить|замените|заменяй/i.test(message)) {
+        session.pendingConflict = undefined;
+        session.state = 'idle';
+        const rescheduleResult = await this.booking.rescheduleAppointment({
+          oldId: pc.oldId,
+          type: pc.oldType,
+          doctorId: pc.newDoctorId,
+          serviceId: pc.newServiceId,
+          clinicId: pc.newClinicId,
+          newStartTime: pc.newStartTime,
+          patientId: session.clientId,
+        });
+        // GigaChat-Pro requires assistant function_call before every function result
+        session.messages.push({ role: 'assistant', content: '', function_call: { name: 'reschedule_appointment', arguments: JSON.stringify({ oldId: pc.oldId, type: pc.oldType, newStartTime: pc.newStartTime }) } });
+        session.messages.push({ role: 'function', name: 'reschedule_appointment', content: JSON.stringify(rescheduleResult) });
+      } else if (/оставить|оставь|оставьте|оставим|оставляем|обе|оба|не замен/i.test(message)) {
+        session.pendingConflict = undefined;
+        session.state = 'idle';
+        const bookResult = await this.booking.executeTool(
+          'book_appointment',
+          {
+            doctorId: pc.newDoctorId,
+            serviceId: pc.newServiceId,
+            clinicId: pc.newClinicId,
+            startTime: pc.newStartTime,
+          },
+          sessionId,
+          session.clientId,
+        );
+        // GigaChat-Pro requires assistant function_call before every function result
+        session.messages.push({ role: 'assistant', content: '', function_call: { name: 'book_appointment', arguments: JSON.stringify({ doctorId: pc.newDoctorId, clinicId: pc.newClinicId, startTime: pc.newStartTime }) } });
+        session.messages.push({ role: 'function', name: 'book_appointment', content: JSON.stringify(bookResult) });
+      }
     }
 
     const tools = this.booking.getTools();
@@ -141,7 +118,17 @@ export class ChatService implements OnModuleInit {
     // Build full context with system prompt prepended
     const today = new Date();
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    const systemWithDate = `${this.systemPrompt}\nСегодняшняя дата: ${todayStr}. При указании дат всегда используй формат YYYY-MM-DD с текущим годом.`;
+    let systemWithDate = `${this.systemPrompt}\nСегодняшняя дата: ${todayStr}. При указании дат всегда используй формат YYYY-MM-DD с текущим годом.`;
+
+    // Rec 6+7: merge conflict state into the system prompt (GigaChat requires system to be first message only)
+    if (session.state === 'conflict_resolution' && session.pendingConflict) {
+      const pc = session.pendingConflict;
+      systemWithDate +=
+        `\n\nТЕКУЩЕЕ СОСТОЯНИЕ: режим разрешения конфликта.` +
+        ` Существующая запись: ${pc.oldId} (тип: ${pc.oldType}), новое время: ${pc.newStartTime}.` +
+        ` Ожидается ответ пациента: "оставить обе записи" или "заменить старую".` +
+        ` НЕ предлагай новых записей. НЕ вызывай инструменты.`;
+    }
 
     let reply: string;
     try {
@@ -225,6 +212,22 @@ export class ChatService implements OnModuleInit {
 
       this.logger.debug(`Tool call: ${result.toolName}(${JSON.stringify(result.toolArgs)})`);
 
+      // Rec 9: block book_appointment while conflict is unresolved
+      if (result.toolName === 'book_appointment' && session.state === 'conflict_resolution') {
+        const retryBlockMsg: ChatMessage = {
+          role: 'function',
+          name: result.toolName,
+          content: JSON.stringify({
+            success: false,
+            reason: 'conflict_unresolved',
+            error: 'Сначала нужно выбрать: оставить обе записи или заменить старую на новую.',
+          }),
+        };
+        context.push(retryBlockMsg);
+        session.messages.push(retryBlockMsg);
+        continue;
+      }
+
       // Guard: book_appointment and reschedule_appointment require explicit confirmation
       // in the last user message of this turn
       if (result.toolName === 'book_appointment' || result.toolName === 'reschedule_appointment') {
@@ -239,9 +242,7 @@ export class ChatService implements OnModuleInit {
             name: result.toolName,
             content: JSON.stringify({
               success: false,
-              message:
-                'Запись НЕ выполнена — требуется явное подтверждение от пациента. ' +
-                'Покажи итоговую информацию (врач, дата, время, клиника) и задай вопрос "Подтверждаете запись?"',
+              reason: 'confirmation_required',
             }),
           };
           context.push(blockMsg);
@@ -249,15 +250,30 @@ export class ChatService implements OnModuleInit {
           continue;
         }
 
+        // Rec 5: validate that doctorId or serviceId is present for book_appointment
+        if (result.toolName === 'book_appointment' && !result.toolArgs.doctorId && !result.toolArgs.serviceId) {
+          const validationMsg: ChatMessage = {
+            role: 'function',
+            name: result.toolName,
+            content: JSON.stringify({
+              success: false,
+              reason: 'missing_target',
+              error: 'Необходимо передать doctorId (для записи к врачу) или serviceId (для услуги).',
+            }),
+          };
+          context.push(validationMsg);
+          session.messages.push(validationMsg);
+          continue;
+        }
+
         // Warn if patient already has an appointment at the same time slot
-        // Skip conflict check if GigaChat explicitly sets ignoreConflict=true (user confirmed keeping both)
-        if (result.toolName === 'book_appointment' && session.clientId && result.toolArgs.startTime && !result.toolArgs.ignoreConflict) {
+        if (result.toolName === 'book_appointment' && session.clientId && result.toolArgs.startTime) {
           const conflict = await this.booking.checkPatientTimeConflict(
             session.clientId,
             result.toolArgs.startTime as string,
           );
           if (conflict) {
-            // Save conflict for next turn resolution, warn user
+            // Save conflict for next turn resolution, set conflict_resolution state
             session.pendingConflict = {
               oldId: conflict.id,
               oldType: conflict.type,
@@ -266,6 +282,7 @@ export class ChatService implements OnModuleInit {
               newClinicId: result.toolArgs.clinicId,
               newStartTime: result.toolArgs.startTime as string,
             } as PendingConflict;
+            session.state = 'conflict_resolution';
 
             const warnMsg: ChatMessage = {
               role: 'function',
@@ -273,15 +290,19 @@ export class ChatService implements OnModuleInit {
               content: JSON.stringify({
                 success: false,
                 conflict: true,
-                message:
-                  `КОНФЛИКТ: запись НЕ создана. У пациента уже есть запись: ${conflict.description}. ` +
-                  `Скажи пациенту об этом и спроси: сохранить обе записи или заменить старую на новую?`,
+                existingAppointment: conflict.description,
               }),
             };
             context.push(warnMsg);
             session.messages.push(warnMsg);
 
-            // Force text response immediately — no more tool calls
+            // Force text response — append conflict instruction to the existing system message (GigaChat requires system first only)
+            if (context[0]?.role === 'system') {
+              context[0].content +=
+                '\n\nТЕКУЩЕЕ СОСТОЯНИЕ: обнаружен конфликт записи.' +
+                ' Объясни пациенту ситуацию (поле existingAppointment в последнем результате инструмента),' +
+                ' спроси: оставить обе записи или заменить старую на новую? НЕ вызывай инструменты.';
+            }
             const textResult =
               session.provider === 'gigachat'
                 ? await this.gigaChat.complete(context, tools, session.model, true)
@@ -325,6 +346,7 @@ export class ChatService implements OnModuleInit {
         messages: [],
         provider,
         model,
+        state: 'idle',
         createdAt: new Date(),
         updatedAt: new Date(),
       });

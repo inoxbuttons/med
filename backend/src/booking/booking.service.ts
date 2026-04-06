@@ -597,6 +597,7 @@ export class BookingService {
     requestedDate?: string;
     requestedTime?: string;
     slot?: { date: string; time: string; clinicId: number; clinicName: string } | null;
+    allSlots?: Array<{ date: string; time: string; clinicId: number; clinicName: string }>;
   }>> {
     const resolvedClinicId = await this.resolveClinicIdByName(params.clinicId, params.clinicName);
 
@@ -674,6 +675,12 @@ export class BookingService {
             clinicId: slots[0].clinicId,
             clinicName: slots[0].clinicName,
           };
+          // For day mode return all available times so LLM can show full schedule
+          if (mode === 'day') {
+            (item as any).allSlots = slots.flatMap(sg =>
+              sg.times.map(t => ({ date: sg.date, time: t, clinicId: sg.clinicId, clinicName: sg.clinicName }))
+            );
+          }
         }
       }
 
@@ -738,9 +745,9 @@ export class BookingService {
     startTime: string,
   ): Promise<{ description: string; id: number; type: 'doctor' | 'service' } | null> {
     const start = new Date(startTime);
-    const windowMs = 60 * 60 * 1000; // 1 hour window
-    const from = new Date(start.getTime() - windowMs);
-    const to = new Date(start.getTime() + windowMs);
+    const slotMs = 30 * 60 * 1000; // 30-minute slot duration
+    const from = start;
+    const to = new Date(start.getTime() + slotMs);
 
     const [docAppt, svcAppt] = await Promise.all([
       this.appointmentRepo
@@ -1015,8 +1022,9 @@ export class BookingService {
         name: 'get_available_slots',
         description:
           'Возвращает свободные слоты для записи к врачу или на услугу. ' +
+          'Передавай ТОЛЬКО doctorId (берётся из find_doctors) — clinicId НЕ обязателен, НЕ нужно вызывать get_clinics перед этим. ' +
           'Режимы: nearest — ближайший день со свободными слотами (используй по умолчанию); ' +
-          'day — конкретная дата (только если пациент явно назвал дату); ' +
+          'day — конкретная дата (только если пациент явно назвал дату), возвращает ВСЕ доступные слоты за день; ' +
           'week — вся неделя начиная с targetDate. ' +
           'ВАЖНО: для вопросов "ближайшие окна", "когда можно записаться" — ВСЕГДА используй mode=nearest БЕЗ targetDate. ' +
           'Результат mode=nearest уже содержит первый доступный день — показывай его пациенту напрямую, без упоминания дней в которых слотов нет. ' +
@@ -1034,7 +1042,15 @@ export class BookingService {
             },
             targetDate: {
               type: 'string',
-              description: 'Дата в формате YYYY-MM-DD. Для nearest — дата начала поиска (по умолчанию сегодня). Для day/week — обязательна.',
+              description: 'Конкретная дата YYYY-MM-DD (только если пациент назвал число месяца), либо "завтра"/"послезавтра". Для дней недели ("в среду", "в пятницу") — используй поле dayOfWeek, не передавай вычисленную дату сюда.',
+            },
+            dayOfWeek: {
+              type: 'string',
+              description: 'День недели на русском: "понедельник", "вторник", "среда", "четверг", "пятница", "суббота". ВСЕГДА используй это поле когда пациент говорит "в среду", "в понедельник" и т.п. — сервер сам вычислит правильную дату. НЕ вычисляй дату самостоятельно.',
+            },
+            nextWeek: {
+              type: 'boolean',
+              description: 'true — если пациент сказал "следующей недели" или "в следующий [день]".',
             },
           },
           required: [],
@@ -1064,7 +1080,8 @@ export class BookingService {
         name: 'find_doctors_and_slots',
         description:
           'Ищет врачей по специальности / фамилии и возвращает их доступность. ' +
-          'Если передано time, возвращает isAvailable для этого времени и ближайший свободный слот, если время занято. ' +
+          'Используй этот инструмент когда нужно показать слоты конкретного врача на дату — передай фамилию в speciality и дату в date с mode=day. ' +
+          'При mode=day результат содержит поле allSlots — массив ВСЕХ свободных слотов за день; показывай все времена из allSlots. ' +
           'Если time не задан, возвращает ближайший свободный слот в указанном интервале (mode: nearest/day/week).',
         parameters: {
           type: 'object',
@@ -1072,8 +1089,10 @@ export class BookingService {
             speciality: { type: 'string', description: 'Специальность или фамилия врача' },
             clinicId: { type: 'number', description: 'ID клиники (необязательно)' },
             clinicName: { type: 'string', description: 'Название клиники (необязательно)' },
-            date: { type: 'string', description: 'Дата YYYY-MM-DD или относительное слово (например "завтра")' },
-            time: { type: 'string', description: 'Желаемое время HH:MM (необязательно)' },
+            date: { type: 'string', description: 'Дата YYYY-MM-DD, "завтра" или "послезавтра". Для дней недели используй поле dayOfWeek. Если пациент говорит "на следующей неделе" без конкретного дня — передай "следующая неделя".' },
+            dayOfWeek: { type: 'string', description: 'День недели на русском: "понедельник", "вторник", "среда", "четверг", "пятница", "суббота". Используй когда пациент говорит "в понедельник", "в следующий вторник" и т.п. — сервер сам вычислит ближайшую дату этого дня.' },
+            nextWeek: { type: 'boolean', description: 'true — если пациент сказал "следующей недели" или "в следующий [день]". Сдвигает дату на одну неделю вперёд.' },
+            time: { type: 'string', description: 'Желаемое время строго в формате HH:MM, например "09:00", "15:30". НЕ передавай сюда слова "утром", "вечером", "утреннее время" — это не валидный формат. Если пациент сказал только "утром" — не передавай time вообще, просто ищи доступные слоты.' },
             mode: {
               type: 'string',
               enum: ['nearest', 'day', 'week'],
@@ -1164,13 +1183,14 @@ export class BookingService {
         parameters: {
           type: 'object',
           properties: {
-            doctorId: { type: 'number', description: 'ID врача' },
-            serviceId: { type: 'number', description: 'ID услуги' },
-            clinicId: { type: 'number', description: 'ID клиники' },
-            startTime: { type: 'string', description: 'Дата и время начала, ISO 8601, например "2026-03-25T10:00:00"' },
+            doctorId: { type: 'number', description: 'ID врача (обязателен для записи к врачу; возьми из find_doctors или find_available_at_time)' },
+            serviceId: { type: 'number', description: 'ID услуги (обязателен для записи на услугу; возьми из find_services)' },
+            clinicId: { type: 'number', description: 'ID клиники (обязателен; возьми из find_doctors, find_services или find_available_at_time)' },
+            startTime: { type: 'string', description: 'Дата и время начала, ISO 8601, например "2026-03-25T10:00:00" (обязателен)' },
             comment: { type: 'string', description: 'Дополнительный комментарий (необязательно)' },
           },
           required: ['clinicId', 'startTime'],
+          // Note: doctorId required for doctor bookings, serviceId required for service bookings — at least one must be present
         },
       },
     ];
@@ -1190,8 +1210,26 @@ export class BookingService {
           return this.findDoctors(args.speciality, args.clinicId);
         case 'find_services':
           return this.findServices(args.query, args.clinicId);
-        case 'get_available_slots':
-          return this.getAvailableSlots(args);
+        case 'get_available_slots': {
+          const slotArgs = { ...args };
+          // dayOfWeek always takes priority — resolve to date server-side
+          let resolvedTarget: string | undefined = slotArgs.targetDate;
+          if (slotArgs.dayOfWeek) {
+            const resolved = nearestWeekdayDate(slotArgs.dayOfWeek, slotArgs.nextWeek ? 1 : 0);
+            if (resolved) resolvedTarget = resolved;
+          } else if (resolvedTarget && !/^\d{4}-\d{2}-\d{2}$/.test(resolvedTarget)) {
+            // targetDate is a text phrase ("в среду", "завтра") — resolve server-side
+            const resolved = resolveRelativeDate(resolvedTarget);
+            if (resolved) resolvedTarget = toDateStr(resolved);
+          }
+          return this.getAvailableSlots({
+            doctorId: slotArgs.doctorId,
+            serviceId: slotArgs.serviceId,
+            clinicId: slotArgs.clinicId,
+            mode: slotArgs.mode,
+            targetDate: resolvedTarget,
+          });
+        }
         case 'find_available_at_time':
           return this.findAvailableAtTime({
             speciality: args.speciality,
@@ -1199,15 +1237,27 @@ export class BookingService {
             time: args.time,
             clinicId: args.clinicId,
           });
-        case 'find_doctors_and_slots':
+        case 'find_doctors_and_slots': {
+          const dsArgs = { ...args };
+          // dayOfWeek always takes priority over a manually computed date
+          if (dsArgs.dayOfWeek) {
+            const resolved = nearestWeekdayDate(dsArgs.dayOfWeek, dsArgs.nextWeek ? 1 : 0);
+            if (resolved) dsArgs.date = resolved;
+          }
+          // Sanitize time: ignore non-HH:MM values (e.g. "утром", "вторая половина дня")
+          const validTime = /^\d{1,2}:\d{2}$/.test(dsArgs.time ?? '') ? dsArgs.time : undefined;
+          // For vague week queries (no specific date computed), use nearest; otherwise keep explicit mode
+          const isVagueWeekQuery = dsArgs.date && !dsArgs.dayOfWeek && !/^\d{4}-\d{2}-\d{2}$/.test(dsArgs.date ?? '');
+          const effectiveMode = dsArgs.mode ?? (isVagueWeekQuery ? 'nearest' : undefined);
           return this.findDoctorsAndSlots({
-            speciality: args.speciality,
-            clinicId: args.clinicId,
-            clinicName: args.clinicName,
-            date: args.date,
-            time: args.time,
-            mode: args.mode,
+            speciality: dsArgs.speciality,
+            clinicId: dsArgs.clinicId,
+            clinicName: dsArgs.clinicName,
+            date: dsArgs.date,
+            time: validTime,
+            mode: effectiveMode,
           });
+        }
         case 'get_patient_appointments': {
           if (!clientId) return { error: 'Пациент не идентифицирован. Функция доступна только авторизованным пользователям.' };
           return this.getPatientAppointments(clientId, args.limit);
@@ -1311,7 +1361,7 @@ function nearestDayOfMonth(day: number): string | null {
 }
 
 /** Возвращает YYYY-MM-DD ближайшего предстоящего дня недели (включая сегодня) */
-function nearestWeekdayDate(dayName: string): string | null {
+function nearestWeekdayDate(dayName: string, weekOffset = 0): string | null {
   const map: Record<string, number> = {
     понедельник: 1, вторник: 2, среда: 3, среду: 3,
     четверг: 4, пятница: 5, пятницу: 5, суббота: 6, субботу: 6,
@@ -1322,7 +1372,9 @@ function nearestWeekdayDate(dayName: string): string | null {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const current = today.getDay();
-  const diff = (target - current + 7) % 7;
+  let diff = (target - current + 7) % 7;
+  if (diff === 0) diff = 7; // same day → next occurrence
+  diff += weekOffset * 7;
   const result = new Date(today);
   result.setDate(today.getDate() + diff);
   return toDateStr(result);
@@ -1374,6 +1426,28 @@ function resolveRelativeDate(expr: string): Date | null {
   if (s === 'сегодня') return today;
   if (s === 'завтра') { const d = new Date(today); d.setDate(d.getDate() + 1); return d; }
   if (s === 'послезавтра') { const d = new Date(today); d.setDate(d.getDate() + 2); return d; }
+
+  // "следующая неделя" / "next week" without specific day → nearest upcoming Monday (= start of next week)
+  if (/следующ.*недел|next week/.test(s) && !/понедельник|вторник|среда|четверг|пятница|суббота|воскресенье/.test(s)) {
+    const resolved = nearestWeekdayDate('понедельник', 0);
+    if (resolved) {
+      const [y, m, d] = resolved.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    }
+  }
+
+  // Day-of-week expressions: "в понедельник", "в следующий понедельник", "в понедельник следующей недели"
+  const dayNames = ['воскресенье','понедельник','вторник','среда','среду','четверг','пятница','пятницу','суббота','субботу'];
+  const nextWeekOffset = /следующ/.test(s) ? 1 : 0;
+  for (const name of dayNames) {
+    if (s.includes(name)) {
+      const resolved = nearestWeekdayDate(name, nextWeekOffset);
+      if (resolved) {
+        const [y, m, d] = resolved.split('-').map(Number);
+        return new Date(y, m - 1, d);
+      }
+    }
+  }
   return null;
 }
 

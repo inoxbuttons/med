@@ -9,6 +9,8 @@ import {
   ConversationHeader,
 } from '@chatscope/chat-ui-kit-react';
 import '@chatscope/chat-ui-kit-styles/dist/default/styles.min.css';
+import ReactMarkdown from 'react-markdown';
+import './markdown.css';
 
 import type { ChatMessage, LlmProvider } from '../types/chat';
 import { sendMessage } from '../services/api';
@@ -93,13 +95,22 @@ export function ChatWidget({
               <Message
                 key={msg.id}
                 model={{
-                  message: msg.text,
+                  type: msg.sender === 'assistant' ? 'custom' : 'text',
+                  message: msg.sender === 'user' ? msg.text : undefined,
                   sentTime: msg.timestamp.toLocaleTimeString(),
                   sender: msg.sender === 'user' ? 'Вы' : title,
                   direction: msg.sender === 'user' ? 'outgoing' : 'incoming',
                   position: 'single',
                 }}
-              />
+              >
+                {msg.sender === 'assistant' && (
+                  <Message.CustomContent>
+                    <div className="md-content">
+                      <ReactMarkdown>{msg.text}</ReactMarkdown>
+                    </div>
+                  </Message.CustomContent>
+                )}
+              </Message>
             ))}
           </MessageList>
 

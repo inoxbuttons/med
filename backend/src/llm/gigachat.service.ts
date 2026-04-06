@@ -68,7 +68,7 @@ export class GigaChatService {
   }
 
   /** Simple chat without tools (backward-compatible) */
-  async chat(messages: ChatMessage[], model = 'GigaChat'): Promise<string> {
+  async chat(messages: ChatMessage[], model = 'GigaChat-Pro'): Promise<string> {
     const result = await this.complete(messages, [], model);
     return result.type === 'text' ? result.content : '';
   }
@@ -77,7 +77,7 @@ export class GigaChatService {
   async complete(
     messages: ChatMessage[],
     tools: LlmTool[] = [],
-    model = 'GigaChat',
+    model = 'GigaChat-Pro',
     forceText = false,
   ): Promise<CompletionResult> {
     const token = await this.getAccessToken();

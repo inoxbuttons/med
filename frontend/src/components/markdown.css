@@ -1,0 +1,26 @@
+.md-content ul,
+.md-content ol {
+  margin: 6px 0 6px 20px;
+  padding: 0;
+}
+
+.md-content ul {
+  list-style: disc;
+}
+
+.md-content ol {
+  list-style: decimal;
+}
+
+.md-content li {
+  margin: 2px 0;
+  display: list-item;
+}
+
+.md-content p {
+  margin: 4px 0;
+}
+
+.md-content strong {
+  font-weight: 700;
+}
