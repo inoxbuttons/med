@@ -1,5 +1,7 @@
 node_modules/
-dist/
 .env
+# dist исключён везде кроме backend (нужен для Docker)
+dist/
+!backend/dist/
 *.log
 .DS_Store
