@@ -90,6 +90,9 @@ let GigaChatService = GigaChatService_1 = class GigaChatService {
             throw new Error(`GigaChat request failed: ${response.status} ${text}`);
         }
         const data = await response.json();
+        if (data.usage) {
+            this.logger.debug(`Tokens — prompt: ${data.usage.prompt_tokens}, completion: ${data.usage.completion_tokens}, total: ${data.usage.total_tokens}`);
+        }
         const choice = data.choices[0];
         if (choice.finish_reason === 'function_call' && choice.message.function_call) {
             let args = {};
