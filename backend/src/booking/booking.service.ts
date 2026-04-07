@@ -1017,16 +1017,16 @@ export class BookingService {
       },
       {
         name: 'get_available_slots',
-        description: 'Свободные слоты врача. mode: nearest — ближайший день (по умолчанию), day — конкретная дата, week — неделя. Когда пациент называет день недели ("в пятницу", "в среду") — ВСЕГДА используй dayOfWeek, НЕ вычисляй дату самостоятельно.',
+        description: 'Свободные слоты врача. Используй только когда doctorId уже известен из find_doctors_and_slots. mode: nearest — ближайший (по умолчанию), day — конкретная дата, week — неделя. Для дней недели ВСЕГДА используй dayOfWeek, НЕ вычисляй дату самостоятельно.',
         parameters: {
           type: 'object',
           properties: {
-            doctorId: { type: 'number', description: 'ID врача' },
+            doctorId: { type: 'number', description: 'ID врача (берётся из find_doctors_and_slots)' },
             serviceId: { type: 'number', description: 'ID услуги' },
             clinicId: { type: 'number', description: 'ID клиники' },
             mode: { type: 'string', enum: ['nearest', 'day', 'week'] },
-            targetDate: { type: 'string', description: 'Только если пациент назвал КОНКРЕТНОЕ ЧИСЛО ("10 апреля", "2026-04-10"). НЕ использовать для дней недели.' },
-            dayOfWeek: { type: 'string', description: 'День недели по-русски ("пятница", "среда"). Используй вместо targetDate когда пациент называет день недели — сервер сам вычислит правильную дату.' },
+            targetDate: { type: 'string', description: 'Дата YYYY-MM-DD или "завтра"/"послезавтра" — только если пациент назвал конкретное число. Для дней недели используй dayOfWeek.' },
+            dayOfWeek: { type: 'string', description: 'День недели на русском: "понедельник", "вторник", "среда", "четверг", "пятница", "суббота". ВСЕГДА используй это поле когда пациент называет день недели — сервер вычислит правильную дату. НЕ вычисляй дату самостоятельно.' },
             nextWeek: { type: 'boolean', description: 'true — следующая неделя' },
           },
           required: [],
@@ -1048,15 +1048,15 @@ export class BookingService {
       },
       {
         name: 'find_doctors_and_slots',
-        description: 'Ищет врачей и их доступность. mode=day → allSlots содержит все слоты за день. Используй как основной инструмент поиска слотов.',
+        description: 'Основной инструмент поиска врачей и слотов по специальности. mode=day → allSlots содержит все слоты за день. Всегда вызывай этот инструмент первым когда нужно найти врача.',
         parameters: {
           type: 'object',
           properties: {
             speciality: { type: 'string', description: 'Специальность или фамилия' },
             clinicId: { type: 'number', description: 'ID клиники' },
             clinicName: { type: 'string', description: 'Название клиники' },
-            date: { type: 'string', description: 'Только если пациент назвал КОНКРЕТНОЕ ЧИСЛО ("10 апреля"). НЕ использовать для дней недели.' },
-            dayOfWeek: { type: 'string', description: 'День недели по-русски ("пятница", "среда"). Используй вместо date когда пациент называет день недели — сервер сам вычислит правильную дату.' },
+            date: { type: 'string', description: 'Дата YYYY-MM-DD, "завтра", "послезавтра". Для дней недели используй dayOfWeek.' },
+            dayOfWeek: { type: 'string', description: 'День недели на русском: "понедельник", "вторник", "среда", "четверг", "пятница", "суббота". ВСЕГДА используй это поле когда пациент называет день недели — сервер вычислит правильную дату. НЕ вычисляй дату самостоятельно.' },
             nextWeek: { type: 'boolean', description: 'true — следующая неделя' },
             time: { type: 'string', description: 'Время HH:MM' },
             mode: { type: 'string', enum: ['nearest', 'day', 'week'] },
