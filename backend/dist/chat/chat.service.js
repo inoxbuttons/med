@@ -114,7 +114,7 @@ let ChatService = ChatService_1 = class ChatService {
             else {
                 const context = [
                     { role: 'system', content: systemWithDate },
-                    ...session.messages,
+                    ...this.trimMessages(session.messages),
                 ];
                 reply = await this.runToolLoop(session, context, tools, sessionId);
             }
@@ -276,6 +276,13 @@ let ChatService = ChatService_1 = class ChatService {
             });
         }
         return this.sessions.get(sessionId);
+    }
+    trimMessages(messages, maxCount = 20) {
+        if (messages.length <= maxCount)
+            return messages;
+        const trimmed = messages.slice(-maxCount);
+        const firstUserIdx = trimmed.findIndex((m) => m.role === 'user');
+        return firstUserIdx > 0 ? trimmed.slice(firstUserIdx) : trimmed;
     }
     cleanExpiredSessions() {
         const now = Date.now();

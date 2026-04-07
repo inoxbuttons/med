@@ -137,7 +137,7 @@ export class ChatService implements OnModuleInit {
       } else {
         const context: ChatMessage[] = [
           { role: 'system', content: systemWithDate },
-          ...session.messages,
+          ...this.trimMessages(session.messages),
         ];
         reply = await this.runToolLoop(session, context, tools, sessionId);
       }
@@ -352,6 +352,14 @@ export class ChatService implements OnModuleInit {
       });
     }
     return this.sessions.get(sessionId)!;
+  }
+
+  private trimMessages(messages: ChatMessage[], maxCount = 20): ChatMessage[] {
+    if (messages.length <= maxCount) return messages;
+    const trimmed = messages.slice(-maxCount);
+    // Start from the first user message to avoid orphaned function results
+    const firstUserIdx = trimmed.findIndex((m) => m.role === 'user');
+    return firstUserIdx > 0 ? trimmed.slice(firstUserIdx) : trimmed;
   }
 
   private cleanExpiredSessions(): void {

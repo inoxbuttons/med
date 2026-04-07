@@ -988,209 +988,151 @@ export class BookingService {
     return [
       {
         name: 'get_clinics',
-        description: 'Возвращает список клиник сети. Вызывай, когда нужно узнать ID клиники или предложить пациенту выбор.',
+        description: 'Список клиник сети.',
         parameters: { type: 'object', properties: {}, required: [] },
       },
       {
         name: 'find_doctors',
-        description:
-          'Находит врачей по специальности или фамилии (нечёткий поиск). ' +
-          'Используй, когда нужно найти ID врача или список врачей по специальности. ' +
-          'Если пользователь называет фамилию врача — передавай её в поле speciality.',
+        description: 'Поиск врачей по специальности или фамилии.',
         parameters: {
           type: 'object',
           properties: {
-            speciality: { type: 'string', description: 'Специальность или фамилия врача, например "терапевт", "Нестерова"' },
-            clinicId: { type: 'number', description: 'ID клиники (необязательно)' },
+            speciality: { type: 'string', description: 'Специальность или фамилия' },
+            clinicId: { type: 'number', description: 'ID клиники' },
           },
           required: ['speciality'],
         },
       },
       {
         name: 'find_services',
-        description: 'Находит медицинские услуги по названию (нечёткий поиск).',
+        description: 'Поиск медуслуг по названию.',
         parameters: {
           type: 'object',
           properties: {
-            query: { type: 'string', description: 'Название услуги или её часть, например "УЗИ", "ЭКГ"' },
-            clinicId: { type: 'number', description: 'ID клиники (необязательно)' },
+            query: { type: 'string', description: 'Название услуги' },
+            clinicId: { type: 'number', description: 'ID клиники' },
           },
           required: ['query'],
         },
       },
       {
         name: 'get_available_slots',
-        description:
-          'Возвращает свободные слоты для записи к врачу или на услугу. ' +
-          'Передавай ТОЛЬКО doctorId (берётся из find_doctors) — clinicId НЕ обязателен, НЕ нужно вызывать get_clinics перед этим. ' +
-          'Режимы: nearest — ближайший день со свободными слотами (используй по умолчанию); ' +
-          'day — конкретная дата (только если пациент явно назвал дату), возвращает ВСЕ доступные слоты за день; ' +
-          'week — вся неделя начиная с targetDate. ' +
-          'ВАЖНО: для вопросов "ближайшие окна", "когда можно записаться" — ВСЕГДА используй mode=nearest БЕЗ targetDate. ' +
-          'Результат mode=nearest уже содержит первый доступный день — показывай его пациенту напрямую, без упоминания дней в которых слотов нет. ' +
-          'В режиме day результат содержит клинику даже если times пустой — врач работает, но слоты заняты.',
+        description: 'Свободные слоты врача. mode: nearest — ближайший день (по умолчанию), day — конкретная дата, week — неделя. Когда пациент называет день недели ("в пятницу", "в среду") — ВСЕГДА используй dayOfWeek, НЕ вычисляй дату самостоятельно.',
         parameters: {
           type: 'object',
           properties: {
             doctorId: { type: 'number', description: 'ID врача' },
             serviceId: { type: 'number', description: 'ID услуги' },
-            clinicId: { type: 'number', description: 'ID клиники (необязательно)' },
-            mode: {
-              type: 'string',
-              enum: ['nearest', 'day', 'week'],
-              description: 'nearest — ближайшее окно, day — конкретный день, week — неделя',
-            },
-            targetDate: {
-              type: 'string',
-              description: 'Конкретная дата YYYY-MM-DD (только если пациент назвал число месяца), либо "завтра"/"послезавтра". Для дней недели ("в среду", "в пятницу") — используй поле dayOfWeek, не передавай вычисленную дату сюда.',
-            },
-            dayOfWeek: {
-              type: 'string',
-              description: 'День недели на русском: "понедельник", "вторник", "среда", "четверг", "пятница", "суббота". ВСЕГДА используй это поле когда пациент говорит "в среду", "в понедельник" и т.п. — сервер сам вычислит правильную дату. НЕ вычисляй дату самостоятельно.',
-            },
-            nextWeek: {
-              type: 'boolean',
-              description: 'true — если пациент сказал "следующей недели" или "в следующий [день]".',
-            },
+            clinicId: { type: 'number', description: 'ID клиники' },
+            mode: { type: 'string', enum: ['nearest', 'day', 'week'] },
+            targetDate: { type: 'string', description: 'Только если пациент назвал КОНКРЕТНОЕ ЧИСЛО ("10 апреля", "2026-04-10"). НЕ использовать для дней недели.' },
+            dayOfWeek: { type: 'string', description: 'День недели по-русски ("пятница", "среда"). Используй вместо targetDate когда пациент называет день недели — сервер сам вычислит правильную дату.' },
+            nextWeek: { type: 'boolean', description: 'true — следующая неделя' },
           },
           required: [],
         },
       },
       {
         name: 'find_available_at_time',
-        description:
-          'Проверяет доступность у ВСЕХ врачей заданной специальности на конкретное время. ' +
-          'Используй ВМЕСТО get_available_slots когда пациент называет конкретное время (например "в 15:00", "в 9 утра"). ' +
-          'Каждый элемент результата содержит doctorId, doctorName, clinicId, clinicName, date, times. ' +
-          'available — врачи у которых ЕСТЬ слот на запрошенное время; ' +
-          'nearest — ближайшие слоты у врачей у которых запрошенное время занято (только когда available пустой). ' +
-          'ВАЖНО: при записи используй ТОЛЬКО doctorId и clinicId из этого результата.',
+        description: 'Доступность врачей на конкретное время. Используй когда пациент называет точное время. available — врачи со свободным слотом; nearest — ближайшие слоты если available пуст.',
         parameters: {
           type: 'object',
           properties: {
-            speciality: { type: 'string', description: 'Специальность врача, например "Терапевт"' },
-            date: { type: 'string', description: 'Дата YYYY-MM-DD или относительное слово: "завтра", "послезавтра", "сегодня"' },
-            time: { type: 'string', description: 'Время HH:MM, например "15:00"' },
-            clinicId: { type: 'number', description: 'ID клиники (необязательно)' },
+            speciality: { type: 'string', description: 'Специальность' },
+            date: { type: 'string', description: 'Дата YYYY-MM-DD или "завтра"/"послезавтра"' },
+            time: { type: 'string', description: 'Время HH:MM' },
+            clinicId: { type: 'number', description: 'ID клиники' },
           },
           required: ['speciality', 'date', 'time'],
         },
       },
       {
         name: 'find_doctors_and_slots',
-        description:
-          'Ищет врачей по специальности / фамилии и возвращает их доступность. ' +
-          'Используй этот инструмент когда нужно показать слоты конкретного врача на дату — передай фамилию в speciality и дату в date с mode=day. ' +
-          'При mode=day результат содержит поле allSlots — массив ВСЕХ свободных слотов за день; показывай все времена из allSlots. ' +
-          'Если time не задан, возвращает ближайший свободный слот в указанном интервале (mode: nearest/day/week).',
+        description: 'Ищет врачей и их доступность. mode=day → allSlots содержит все слоты за день. Используй как основной инструмент поиска слотов.',
         parameters: {
           type: 'object',
           properties: {
-            speciality: { type: 'string', description: 'Специальность или фамилия врача' },
-            clinicId: { type: 'number', description: 'ID клиники (необязательно)' },
-            clinicName: { type: 'string', description: 'Название клиники (необязательно)' },
-            date: { type: 'string', description: 'Дата YYYY-MM-DD, "завтра" или "послезавтра". Для дней недели используй поле dayOfWeek. Если пациент говорит "на следующей неделе" без конкретного дня — передай "следующая неделя".' },
-            dayOfWeek: { type: 'string', description: 'День недели на русском: "понедельник", "вторник", "среда", "четверг", "пятница", "суббота". Используй когда пациент говорит "в понедельник", "в следующий вторник" и т.п. — сервер сам вычислит ближайшую дату этого дня.' },
-            nextWeek: { type: 'boolean', description: 'true — если пациент сказал "следующей недели" или "в следующий [день]". Сдвигает дату на одну неделю вперёд.' },
-            time: { type: 'string', description: 'Желаемое время строго в формате HH:MM, например "09:00", "15:30". НЕ передавай сюда слова "утром", "вечером", "утреннее время" — это не валидный формат. Если пациент сказал только "утром" — не передавай time вообще, просто ищи доступные слоты.' },
-            mode: {
-              type: 'string',
-              enum: ['nearest', 'day', 'week'],
-              description: 'Если задан, используется для поиска ближайших слотов (по умолчанию nearest).',
-            },
+            speciality: { type: 'string', description: 'Специальность или фамилия' },
+            clinicId: { type: 'number', description: 'ID клиники' },
+            clinicName: { type: 'string', description: 'Название клиники' },
+            date: { type: 'string', description: 'Только если пациент назвал КОНКРЕТНОЕ ЧИСЛО ("10 апреля"). НЕ использовать для дней недели.' },
+            dayOfWeek: { type: 'string', description: 'День недели по-русски ("пятница", "среда"). Используй вместо date когда пациент называет день недели — сервер сам вычислит правильную дату.' },
+            nextWeek: { type: 'boolean', description: 'true — следующая неделя' },
+            time: { type: 'string', description: 'Время HH:MM' },
+            mode: { type: 'string', enum: ['nearest', 'day', 'week'] },
           },
           required: ['speciality'],
         },
       },
       {
         name: 'find_patient_appointment',
-        description:
-          'Ищет предстоящие записи пациента (к врачам и на услуги) для отмены или переноса. ' +
-          'Все параметры необязательны — передавай только то, что известно из запроса пациента. ' +
-          'Если пациент назвал только дату — передавай только date, без query. ' +
-          'Если пациент назвал только специальность или врача — передавай только query. ' +
-          'Возвращает список совпадений с id, doctorId/serviceId, clinicId каждой записи.',
+        description: 'Ищет предстоящие записи пациента (для отмены/переноса). Все параметры опциональны.',
         parameters: {
           type: 'object',
           properties: {
-            query: { type: 'string', description: 'Имя врача, фамилия или специальность, либо название процедуры' },
-            date: { type: 'string', description: 'Дата записи YYYY-MM-DD' },
-            time: { type: 'string', description: 'Время записи HH:MM' },
-            dayOfMonth: { type: 'number', description: 'Число месяца (1–31) когда пациент говорит "на 26-е", "26 числа" и т.д. Бэкенд найдёт ближайшую дату с этим числом.' },
-            dayOfWeek: { type: 'string', description: 'День недели на русском — "понедельник", "вторник" и т.д. Бэкенд автоматически вычислит ближайшую дату этого дня.' },
-            timeExpression: { type: 'string', description: 'Разговорное время — "9 утра", "6 вечера", "9:30 утра", "14:00" и т.д. Бэкенд переведёт в HH:MM.' },
+            query: { type: 'string', description: 'Врач, специальность или услуга' },
+            date: { type: 'string', description: 'Дата YYYY-MM-DD' },
+            time: { type: 'string', description: 'Время HH:MM' },
+            dayOfMonth: { type: 'number', description: 'Число месяца (1–31)' },
+            dayOfWeek: { type: 'string', description: 'День недели по-русски' },
+            timeExpression: { type: 'string', description: 'Разговорное время ("9 утра")' },
           },
           required: [],
         },
       },
       {
         name: 'reschedule_appointment',
-        description:
-          'Переносит запись пациента: атомарно создаёт новую запись и отменяет старую. ' +
-          'Вызывай ТОЛЬКО после того как пациент подтвердил перенос. ' +
-          'oldId, type, doctorId/serviceId и clinicId берутся из результата find_patient_appointment.',
+        description: 'Переносит запись. Вызывай ТОЛЬКО после подтверждения пациента.',
         parameters: {
           type: 'object',
           properties: {
-            oldId:        { type: 'number', description: 'ID старой записи из find_patient_appointment' },
-            type:         { type: 'string', enum: ['doctor', 'service'], description: 'Тип записи' },
-            doctorId:     { type: 'number', description: 'ID врача (для doctor)' },
-            serviceId:    { type: 'number', description: 'ID услуги (для service)' },
-            clinicId:     { type: 'number', description: 'ID клиники из find_patient_appointment' },
-            newStartTime: { type: 'string', description: 'Новое время записи ISO 8601, например "2026-03-27T09:30:00"' },
-            comment:      { type: 'string', description: 'Имя пациента или комментарий' },
+            oldId:        { type: 'number', description: 'ID старой записи' },
+            type:         { type: 'string', enum: ['doctor', 'service'] },
+            doctorId:     { type: 'number' },
+            serviceId:    { type: 'number' },
+            clinicId:     { type: 'number' },
+            newStartTime: { type: 'string', description: 'Новое время ISO 8601' },
+            comment:      { type: 'string' },
           },
           required: ['oldId', 'type', 'clinicId', 'newStartTime'],
         },
       },
       {
         name: 'cancel_appointment',
-        description:
-          'Отменяет запись пациента. Вызывай ТОЛЬКО после того как пациент подтвердил отмену. ' +
-          'ID берётся из результата find_patient_appointment.',
+        description: 'Отменяет запись. Вызывай ТОЛЬКО после подтверждения пациента.',
         parameters: {
           type: 'object',
           properties: {
-            id: { type: 'number', description: 'ID записи из результата find_patient_appointment' },
-            type: { type: 'string', enum: ['doctor', 'service'], description: 'Тип записи' },
+            id:   { type: 'number', description: 'ID записи' },
+            type: { type: 'string', enum: ['doctor', 'service'] },
           },
           required: ['id', 'type'],
         },
       },
       {
         name: 'get_patient_appointments',
-        description:
-          'Возвращает предстоящие записи текущего пациента к врачам и на процедуры, отсортированные по времени. ' +
-          'ОБЯЗАТЕЛЬНО вызывай этот инструмент когда пациент говорит: "покажи мои записи", "мои записи", ' +
-          '"когда я записан", "есть ли у меня запись", "ближайшая запись", "покажи расписание" и любые похожие запросы. ' +
-          'Передай limit=1 ТОЛЬКО если пациент явно просит ближайшую запись.',
+        description: 'Предстоящие записи пациента. Вызывай по запросам "мои записи", "когда я записан" и т.п.',
         parameters: {
           type: 'object',
           properties: {
-            limit: { type: 'number', description: 'Максимальное число записей (1 — только ближайшая). Не передавай для показа всех.' },
+            limit: { type: 'number', description: 'Кол-во (1 — только ближайшая)' },
           },
           required: [],
         },
       },
       {
         name: 'book_appointment',
-        description:
-          'Записывает пациента к врачу или на услугу. ' +
-          'СТОП — НЕ вызывай этот инструмент пока пациент не произнёс явное слово-подтверждение: "да", "подтверждаю", "записывайте", "конечно". ' +
-          'Выбор врача ("Нестерова", "запишите к Касумову") — НЕ является подтверждением. ' +
-          'После выбора врача и времени ОБЯЗАТЕЛЬНО выведи сводку (врач, дата, время, клиника) и задай вопрос "Подтверждаете запись?" — затем жди ответа. ' +
-          'Имя пациента спрашивать не нужно — он идентифицирован автоматически.',
+        description: 'Записывает пациента к врачу или на услугу. Вызывай ТОЛЬКО после явного подтверждения ("да", "подтверждаю", "записывайте"). Перед вызовом обязательно покажи сводку и спроси «Подтверждаете запись?».',
         parameters: {
           type: 'object',
           properties: {
-            doctorId: { type: 'number', description: 'ID врача (обязателен для записи к врачу; возьми из find_doctors или find_available_at_time)' },
-            serviceId: { type: 'number', description: 'ID услуги (обязателен для записи на услугу; возьми из find_services)' },
-            clinicId: { type: 'number', description: 'ID клиники (обязателен; возьми из find_doctors, find_services или find_available_at_time)' },
-            startTime: { type: 'string', description: 'Дата и время начала, ISO 8601, например "2026-03-25T10:00:00" (обязателен)' },
-            comment: { type: 'string', description: 'Дополнительный комментарий (необязательно)' },
+            doctorId:  { type: 'number', description: 'ID врача' },
+            serviceId: { type: 'number', description: 'ID услуги' },
+            clinicId:  { type: 'number', description: 'ID клиники (обязателен)' },
+            startTime: { type: 'string', description: 'Дата и время ISO 8601 (обязателен)' },
+            comment:   { type: 'string' },
           },
           required: ['clinicId', 'startTime'],
-          // Note: doctorId required for doctor bookings, serviceId required for service bookings — at least one must be present
         },
       },
     ];

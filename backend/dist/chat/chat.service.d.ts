@@ -21,5 +21,6 @@ export declare class ChatService implements OnModuleInit {
     getHistory(sessionId: string): ChatMessage[];
     clearSession(sessionId: string): void;
     private getOrCreateSession;
+    private trimMessages;
     private cleanExpiredSessions;
 }
