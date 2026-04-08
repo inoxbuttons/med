@@ -15370,14 +15370,15 @@ img.mfp-img {
   align-items: stretch;
   gap: 0;
   flex-direction: column;
+  padding-top: 80px;
 }
 
 /* Mobile: assistant block visible on top */
 .main__block-assistant {
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   padding: 16px;
   background: #fff;
   order: -1;
@@ -15392,6 +15393,7 @@ img.mfp-img {
 @media (min-width: 768px) {
   .main__block-layout {
     flex-direction: row;
+    padding-top: 0;
   }
 
   .main__block-assistant {
@@ -15424,17 +15426,18 @@ img.mfp-img {
 }
 
 .main__block-assistant-img {
-  width: 100%;
-  max-width: 320px;
+  width: auto;
+  max-width: 160px;
   height: auto;
   object-fit: contain;
-  flex: 1 1 auto;
-  display: none;
+  flex-shrink: 0;
 }
 
 @media (min-width: 768px) {
   .main__block-assistant-img {
-    display: block;
+    width: 100%;
+    max-width: 320px;
+    flex: 1 1 auto;
   }
 }
 
