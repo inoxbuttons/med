@@ -294,6 +294,122 @@
     }
     .social-btn:hover { background: var(--blue); }
 
+    /* ─── HERO WITH AI ASSISTANT ─── */
+    .hero-layout {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .hero-assistant {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 24px;
+      background: #fff;
+      order: -1;
+    }
+
+    .hero-assistant img {
+      max-width: 160px;
+      height: auto;
+      object-fit: contain;
+    }
+
+    .hero-assistant-btn {
+      display: block;
+      width: 100%;
+      padding: 16px 20px;
+      background: var(--blue);
+      color: #fff;
+      text-align: center;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: background .2s;
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+      pointer-events: auto;
+    }
+    .hero-assistant-btn:hover { background: var(--blue-hover); color: #fff; }
+
+    @media (min-width: 768px) {
+      .hero-layout {
+        flex-direction: row;
+        align-items: stretch;
+      }
+      .hero-assistant {
+        flex: 0 0 300px;
+        order: -1;
+        gap: 24px;
+        padding: 32px;
+      }
+      .hero-assistant img {
+        max-width: 240px;
+        width: 100%;
+        flex: 1 1 auto;
+      }
+      .hero {
+        flex: 1 1 auto;
+        min-height: 520px;
+      }
+    }
+
+    /* ─── CHAT POPUP ─── */
+    .xxivek-overlay {
+      display: none;
+      position: fixed; inset: 0; z-index: 99999;
+      background: rgba(0,0,0,.55);
+      backdrop-filter: blur(4px);
+      align-items: center; justify-content: center;
+    }
+    .xxivek-overlay.open { display: flex; }
+
+    .xxivek-chat-popup {
+      background: #fff;
+      border-radius: 0;
+      overflow: hidden;
+      width: 100vw;
+      height: 100dvh;
+      box-shadow: none;
+      display: flex; flex-direction: column;
+      animation: xxiChatIn .22s ease;
+    }
+    @keyframes xxiChatIn {
+      from { opacity: 0; transform: scale(.93) translateY(-12px); }
+      to   { opacity: 1; transform: none; }
+    }
+    @media (min-width: 600px) {
+      .xxivek-chat-popup {
+        border-radius: 20px;
+        width: 600px;
+        max-width: calc(100vw - 32px);
+        height: 720px;
+        max-height: calc(100vh - 40px);
+        box-shadow: 0 24px 64px rgba(0,0,0,.25);
+      }
+    }
+    .xxivek-chat-popup__header {
+      background: var(--blue); color: #fff;
+      padding: 14px 18px;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .xxivek-chat-popup__header span {
+      font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px;
+    }
+    .xxivek-chat-popup__close {
+      background: none; border: none; color: #fff;
+      font-size: 22px; cursor: pointer; line-height: 1; opacity: .8;
+    }
+    .xxivek-chat-popup__close:hover { opacity: 1; }
+    .xxivek-chat-popup iframe {
+      flex: 1; border: none; width: 100%;
+    }
+
     /* ─── MODAL OVERLAY ─── */
     .overlay {
       display: none;
@@ -545,8 +661,14 @@
     </div>
   </header>
 
-  <!-- HERO -->
-  <div class="hero">
+  <!-- HERO + AI ASSISTANT -->
+  <div class="hero-layout">
+    <div class="hero-assistant">
+      <img src="assistent.png" alt="ИИ ассистент">
+      <a href="#" class="hero-assistant-btn" onclick="openChat(event)">Записаться с ИИ ассистентом</a>
+    </div>
+
+    <div class="hero">
     <div class="hero-inner">
       <div>
         <h1>Центр лечения боли<br>в Таганроге</h1>
@@ -575,7 +697,8 @@
         </div>
       </div>
     </div>
-  </div>
+  </div><!-- /.hero -->
+  </div><!-- /.hero-layout -->
 
   <!-- SERVICES -->
   <section>
@@ -874,7 +997,61 @@
 </div>
 
 
+<!-- ── CHAT POPUP ── -->
+<div class="xxivek-overlay" id="xxiChatOverlay">
+  <div class="xxivek-chat-popup">
+    <div class="xxivek-chat-popup__header">
+      <span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
+        </svg>
+        Запись с ИИ ассистентом
+      </span>
+      <button class="xxivek-chat-popup__close" onclick="closeChat()">×</button>
+    </div>
+    <iframe id="xxiChatFrame" src="" title="ИИ ассистент клиники XXI Век"></iframe>
+  </div>
+</div>
+
 <script>
+  // ── Session ID ──
+  function getCookie(name) {
+    const m = document.cookie.match('(?:^|; )' + name.replace(/([.$?*|{}()[\]\\/+^])/g, '\\$1') + '=([^;]*)');
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+  function setCookie(name, value, days) {
+    const expires = new Date(Date.now() + days * 864e5).toUTCString();
+    document.cookie = name + '=' + encodeURIComponent(value) + '; expires=' + expires + '; path=/; SameSite=Lax';
+  }
+  function getOrCreateSessionId() {
+    let sid = getCookie('med_session_id');
+    if (!sid) {
+      sid = 'visitor-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      setCookie('med_session_id', sid, 30);
+    }
+    return sid;
+  }
+
+  // ── Chat popup ──
+  function openChat(e) {
+    if (e) e.preventDefault();
+    var sid = getOrCreateSessionId();
+    var frame = document.getElementById('xxiChatFrame');
+    if (!frame.src || frame.src === window.location.href) {
+      frame.src = 'chat.html?session=' + encodeURIComponent(sid);
+    }
+    document.getElementById('xxiChatOverlay').classList.add('open');
+  }
+  function closeChat() {
+    document.getElementById('xxiChatOverlay').classList.remove('open');
+  }
+  document.getElementById('xxiChatOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeChat();
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeChat();
+  });
+
   // ── Пользователи ──
   const USERS = [
     { login: 'elena', password: 'root', name: 'Елена Владимировна', initials: 'ЕВ' }
