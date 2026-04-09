@@ -766,7 +766,7 @@
         <a href="#">Чек-апы</a>
         <a href="#">О нас</a>
         <a href="#">Вакансии</a>
-        <button class="nav-auth-btn" id="authBtn">Вход</button>
+        <a class="nav-auth-btn" href="index.php?logout=1">Выход</button>
       </nav>
 
       <div class="header-phone">+7 (8634) 38-00-08</div>
@@ -1144,7 +1144,7 @@
 </div>
 
 <script>
-  // ── Session ID ──
+  // ── Session ID / user (cookie) ──
   function getCookie(name) {
     const m = document.cookie.match('(?:^|; )' + name.replace(/([.$?*|{}()[\]\\/+^])/g, '\\$1') + '=([^;]*)');
     return m ? decodeURIComponent(m[1]) : null;
@@ -1162,13 +1162,26 @@
     return sid;
   }
 
+  var _currentUser = null;
+  function getCurrentUser() {
+    if (_currentUser) return _currentUser;
+    var stored = getCookie('med_user');
+    if (stored) { try { _currentUser = JSON.parse(decodeURIComponent(stored)); } catch(e) {} }
+    return _currentUser;
+  }
+
   // ── Chat popup ──
   function openChat(e) {
     if (e) e.preventDefault();
-    var sid = getOrCreateSessionId();
+    var sid        = (typeof PHP_SESSION_ID     !== 'undefined') ? PHP_SESSION_ID     : getOrCreateSessionId();
+    var clientId   = (typeof PHP_CLIENT_ID      !== 'undefined') ? PHP_CLIENT_ID      : (getCurrentUser() || {}).clientId;
+    var clinicNetId = (typeof PHP_CLINIC_NET_ID !== 'undefined') ? PHP_CLINIC_NET_ID  : (getCurrentUser() || {}).clinicNetId;
     var frame = document.getElementById('xxiChatFrame');
     if (!frame.src || frame.src === window.location.href) {
-      frame.src = 'chat.html?session=' + encodeURIComponent(sid);
+      var url = 'chat.html?session=' + encodeURIComponent(sid);
+      if (clientId)    url += '&clientId='    + encodeURIComponent(clientId);
+      if (clinicNetId) url += '&clinicNetId=' + encodeURIComponent(clinicNetId);
+      frame.src = url;
     }
     document.getElementById('xxiChatOverlay').classList.add('open');
   }
@@ -1199,7 +1212,7 @@
 
   // ── Пользователи ──
   const USERS = [
-    { login: 'elena', password: 'root', name: 'Елена Владимировна', initials: 'ЕВ' }
+    { login: 'elena', password: 'root', name: 'Елена Владимировна', initials: 'ЕВ', clientId: 1, clinicNetId: 1 }
   ];
 
   var _loggedIn = false;
@@ -1267,6 +1280,8 @@
 
     closeLogin();
     setAuthButtons(true);
+    _currentUser = { clientId: user.clientId, clinicNetId: user.clinicNetId };
+    setCookie('med_user', JSON.stringify(_currentUser), 30);
     document.getElementById('main-site').style.display = 'none';
     document.getElementById('dashboard').classList.add('open');
     document.getElementById('dashUserName').textContent = user.name;
