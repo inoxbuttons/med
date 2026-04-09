@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Авторизованным — отдаём index.html с инжекцией PHP-переменных
 if (!empty($_SESSION['auth'])) {
-    $html = file_get_contents(__DIR__ . '/index.html');
+    $html = file_get_contents(__DIR__ . '/index1.html');
     $inject = '<script>' .
         'var PHP_SESSION_ID   = ' . json_encode(session_id()) . ';' .
         'var PHP_CLIENT_ID    = ' . json_encode(AUTH_CLIENT_ID) . ';' .
