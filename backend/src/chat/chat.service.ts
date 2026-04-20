@@ -106,6 +106,7 @@ export class ChatService implements OnModuleInit {
           },
           sessionId,
           session.clientId,
+          session.clinicNetId,
         );
         // GigaChat-Pro requires assistant function_call before every function result
         session.messages.push({ role: 'assistant', content: '', function_call: { name: 'book_appointment', arguments: JSON.stringify({ doctorId: pc.newDoctorId, clinicId: pc.newClinicId, startTime: pc.newStartTime }) } });
@@ -313,7 +314,7 @@ export class ChatService implements OnModuleInit {
       }
 
       // Execute tool
-      const toolResult = await this.booking.executeTool(result.toolName, result.toolArgs, sessionId, session.clientId);
+      const toolResult = await this.booking.executeTool(result.toolName, result.toolArgs, sessionId, session.clientId, session.clinicNetId);
 
       // Append tool result as function message to context and session
       const funcMsg: ChatMessage = {

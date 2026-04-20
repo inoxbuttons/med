@@ -13,6 +13,8 @@ import { Service } from '../database/entities/service.entity';
 import { ServiceByClinic } from '../database/entities/service-by-clinic.entity';
 import { ServiceSchedule } from '../database/entities/service-schedule.entity';
 import { Appointment } from '../database/entities/appointment.entity';
+import { ClinicNet } from '../database/entities/clinic-net.entity';
+import { InfclinicaModule } from '../integrations/infoclinica/infoclinica.module';
 
 @Module({
   imports: [
@@ -29,7 +31,9 @@ import { Appointment } from '../database/entities/appointment.entity';
       ServiceWorkingHours,
       ServiceException,
       ServiceAppointment,
+      ClinicNet,
     ]),
+    InfclinicaModule,
   ],
   providers: [BookingService],
   exports: [BookingService],

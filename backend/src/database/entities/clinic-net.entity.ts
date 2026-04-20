@@ -22,6 +22,10 @@ export class ClinicNet {
   @Column({ length: 255, nullable: true })
   website: string;
 
+  /** Идентификатор МИС сети клиник, например 'infoclinica'. Null — используется локальная БД. */
+  @Column({ length: 50, nullable: true })
+  mis: string | null;
+
   @OneToMany(() => Clinic, (clinic) => clinic.clinicNet)
   clinics: Clinic[];
 

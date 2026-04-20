@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, ILike, Repository } from 'typeorm';
 import { Clinic } from '../database/entities/clinic.entity';
+import { ClinicNet } from '../database/entities/clinic-net.entity';
+import { InfclinicaService } from '../integrations/infoclinica/infoclinica.service';
 import { Doctor } from '../database/entities/doctor.entity';
 import { DoctorLocation } from '../database/entities/doctor-location.entity';
 import { DoctorWorkingHours } from '../database/entities/doctor-working-hours.entity';
@@ -108,6 +110,9 @@ export class BookingService {
     private readonly serviceExceptionRepo: Repository<ServiceException>,
     @InjectRepository(ServiceAppointment)
     private readonly serviceAppointmentRepo: Repository<ServiceAppointment>,
+    @InjectRepository(ClinicNet)
+    private readonly clinicNetRepo: Repository<ClinicNet>,
+    private readonly infoclinicaService: InfclinicaService,
   ) {}
 
   // ── Clinics ────────────────────────────────────────────────────────────────
@@ -1201,8 +1206,17 @@ export class BookingService {
     args: Record<string, any>,
     _sessionId?: string,
     clientId?: number,
+    clinicNetId?: number,
   ): Promise<unknown> {
     try {
+      // Если clinicNetId указан и сеть использует МИС Инфоклиника — делегируем
+      if (clinicNetId) {
+        const clinicNet = await this.clinicNetRepo.findOne({ where: { id: clinicNetId } });
+        if (clinicNet?.mis === 'infoclinica') {
+          return this.infoclinicaService.executeTool(name, args, clientId);
+        }
+      }
+
       switch (name) {
         case 'get_clinics':
           return this.getClinics();
