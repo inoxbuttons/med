@@ -26,6 +26,10 @@ export class ClinicNet {
   @Column({ length: 50, nullable: true })
   mis: string | null;
 
+  /** API-ключ MedFlex для данной сети клиник. Используется при misType='medflex'. */
+  @Column({ name: 'medflex_key', length: 255, nullable: true })
+  medflexKey: string | null;
+
   @OneToMany(() => Clinic, (clinic) => clinic.clinicNet)
   clinics: Clinic[];
 

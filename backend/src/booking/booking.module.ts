@@ -15,6 +15,7 @@ import { ServiceSchedule } from '../database/entities/service-schedule.entity';
 import { Appointment } from '../database/entities/appointment.entity';
 import { ClinicNet } from '../database/entities/clinic-net.entity';
 import { InfclinicaModule } from '../integrations/infoclinica/infoclinica.module';
+import { MedflexModule } from '../integrations/medflex/medflex.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { InfclinicaModule } from '../integrations/infoclinica/infoclinica.module
       ClinicNet,
     ]),
     InfclinicaModule,
+    MedflexModule,
   ],
   providers: [BookingService],
   exports: [BookingService],

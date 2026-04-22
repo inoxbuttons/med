@@ -66,12 +66,14 @@ export class ChatService implements OnModuleInit {
   }
 
   async sendMessage(dto: SendMessageDto): Promise<SendMessageResponse> {
-    const { sessionId, message, provider = 'gigachat', model, clientId, clinicNetId } = dto;
+    const { sessionId, message, provider = 'gigachat', model, clientId, clinicNetId, misType } = dto;
 
     const session = this.getOrCreateSession(sessionId, provider, model);
-    // Обновляем clientId/clinicNetId если переданы (идентифицируют пользователя)
+    // Обновляем идентификаторы сессии если переданы
     if (clientId    !== undefined) session.clientId    = clientId;
     if (clinicNetId !== undefined) session.clinicNetId = clinicNetId;
+    // misType устанавливается один раз при первом запросе и не меняется
+    if (misType !== undefined && session.misType === undefined) session.misType = misType;
     session.messages.push({ role: 'user', content: message });
     session.updatedAt = new Date();
 
@@ -106,6 +108,7 @@ export class ChatService implements OnModuleInit {
           },
           sessionId,
           session.clientId,
+          session.misType ?? undefined,
           session.clinicNetId,
         );
         // GigaChat-Pro requires assistant function_call before every function result
@@ -114,7 +117,7 @@ export class ChatService implements OnModuleInit {
       }
     }
 
-    const tools = this.booking.getTools();
+    const tools = this.booking.getTools(session.misType ?? undefined);
 
     // Build full context with system prompt prepended
     const today = new Date();
@@ -314,7 +317,7 @@ export class ChatService implements OnModuleInit {
       }
 
       // Execute tool
-      const toolResult = await this.booking.executeTool(result.toolName, result.toolArgs, sessionId, session.clientId, session.clinicNetId);
+      const toolResult = await this.booking.executeTool(result.toolName, result.toolArgs, sessionId, session.clientId, session.misType ?? undefined, session.clinicNetId);
 
       // Append tool result as function message to context and session
       const funcMsg: ChatMessage = {

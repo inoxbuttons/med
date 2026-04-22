@@ -14,6 +14,9 @@ export interface ChatMessage {
   functions_state_id?: string;
 }
 
+/** Тип МИС, передаётся виджетом как параметр. Null — используется локальная БД. */
+export type MisType = 'infoclinica' | 'medflex' | null;
+
 export interface SendMessageDto {
   sessionId: string;
   message: string;
@@ -21,6 +24,8 @@ export interface SendMessageDto {
   model?: string;
   clientId?: number;
   clinicNetId?: number;
+  /** Тип МИС: 'medflex', 'infoclinica'. Передаётся виджетом напрямую, не ищется в БД. */
+  misType?: MisType;
 }
 
 export interface SendMessageResponse {
@@ -46,6 +51,8 @@ export interface SessionData {
   model?: string;
   clientId?: number;
   clinicNetId?: number;
+  /** Тип МИС, установленный при первом запросе сессии. */
+  misType?: MisType;
   pendingConflict?: PendingConflict;
   state: SessionState;
   createdAt: Date;

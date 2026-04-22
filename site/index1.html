@@ -1176,11 +1176,13 @@
     var sid        = (typeof PHP_SESSION_ID     !== 'undefined') ? PHP_SESSION_ID     : getOrCreateSessionId();
     var clientId   = (typeof PHP_CLIENT_ID      !== 'undefined') ? PHP_CLIENT_ID      : (getCurrentUser() || {}).clientId;
     var clinicNetId = (typeof PHP_CLINIC_NET_ID !== 'undefined') ? PHP_CLINIC_NET_ID  : (getCurrentUser() || {}).clinicNetId;
+    var misType    = (typeof PHP_MIS_TYPE       !== 'undefined') ? PHP_MIS_TYPE       : 'medflex';
     var frame = document.getElementById('xxiChatFrame');
     if (!frame.src || frame.src === window.location.href) {
       var url = 'chat.html?session=' + encodeURIComponent(sid);
       if (clientId)    url += '&clientId='    + encodeURIComponent(clientId);
       if (clinicNetId) url += '&clinicNetId=' + encodeURIComponent(clinicNetId);
+      if (misType)     url += '&misType='     + encodeURIComponent(misType);
       frame.src = url;
     }
     document.getElementById('xxiChatOverlay').classList.add('open');

@@ -4,6 +4,7 @@ import { Between, ILike, Repository } from 'typeorm';
 import { Clinic } from '../database/entities/clinic.entity';
 import { ClinicNet } from '../database/entities/clinic-net.entity';
 import { InfclinicaService } from '../integrations/infoclinica/infoclinica.service';
+import { MedflexService } from '../integrations/medflex/medflex.service';
 import { Doctor } from '../database/entities/doctor.entity';
 import { DoctorLocation } from '../database/entities/doctor-location.entity';
 import { DoctorWorkingHours } from '../database/entities/doctor-working-hours.entity';
@@ -113,6 +114,7 @@ export class BookingService {
     @InjectRepository(ClinicNet)
     private readonly clinicNetRepo: Repository<ClinicNet>,
     private readonly infoclinicaService: InfclinicaService,
+    private readonly medflexService: MedflexService,
   ) {}
 
   // ── Clinics ────────────────────────────────────────────────────────────────
@@ -989,7 +991,9 @@ export class BookingService {
 
   // ── Tool definitions ───────────────────────────────────────────────────────
 
-  getTools(): LlmTool[] {
+  getTools(misType?: string): LlmTool[] {
+    if (misType === 'medflex') return this.medflexService.getTools();
+    // infoclinica и локальная БД используют один и тот же набор инструментов
     return [
       {
         name: 'get_clinics',
@@ -1206,17 +1210,25 @@ export class BookingService {
     args: Record<string, any>,
     _sessionId?: string,
     clientId?: number,
+    misType?: string,
     clinicNetId?: number,
   ): Promise<unknown> {
     try {
-      // Если clinicNetId указан и сеть использует МИС Инфоклиника — делегируем
-      if (clinicNetId) {
-        const clinicNet = await this.clinicNetRepo.findOne({ where: { id: clinicNetId } });
-        if (clinicNet?.mis === 'infoclinica') {
-          return this.infoclinicaService.executeTool(name, args, clientId);
+      // Маршрутизация по типу МИС (передаётся виджетом напрямую)
+      if (misType === 'infoclinica') {
+        return this.infoclinicaService.executeTool(name, args, clientId);
+      }
+      if (misType === 'medflex') {
+        // Ключ MedFlex берётся из БД по clinicNetId
+        let medflexKey: string | null = null;
+        if (clinicNetId) {
+          const clinicNet = await this.clinicNetRepo.findOne({ where: { id: clinicNetId } });
+          medflexKey = clinicNet?.medflexKey ?? null;
         }
+        return this.medflexService.executeTool(name, args, clientId, medflexKey);
       }
 
+      // Локальная БД (misType не задан или неизвестен)
       switch (name) {
         case 'get_clinics':
           return this.getClinics();
