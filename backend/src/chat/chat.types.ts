@@ -26,6 +26,10 @@ export interface SendMessageDto {
   clinicNetId?: number;
   /** Тип МИС: 'medflex', 'infoclinica'. Передаётся виджетом напрямую, не ищется в БД. */
   misType?: MisType;
+  /** ID города (MedFlex town_id) для геофильтрации. Зарезервировано. */
+  townId?: number;
+  /** ID района (MedFlex district_id) для геофильтрации. Зарезервировано. */
+  districtId?: number;
 }
 
 export interface SendMessageResponse {
@@ -53,6 +57,10 @@ export interface SessionData {
   clinicNetId?: number;
   /** Тип МИС, установленный при первом запросе сессии. */
   misType?: MisType;
+  /** ID города (MedFlex town_id) для геофильтрации расписания. */
+  townId?: number;
+  /** ID района (MedFlex district_id) для геофильтрации расписания. */
+  districtId?: number;
   pendingConflict?: PendingConflict;
   state: SessionState;
   createdAt: Date;

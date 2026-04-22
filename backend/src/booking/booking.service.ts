@@ -1212,6 +1212,8 @@ export class BookingService {
     clientId?: number,
     misType?: string,
     clinicNetId?: number,
+    townId?: number,
+    districtId?: number,
   ): Promise<unknown> {
     try {
       // Маршрутизация по типу МИС (передаётся виджетом напрямую)
@@ -1225,7 +1227,8 @@ export class BookingService {
           const clinicNet = await this.clinicNetRepo.findOne({ where: { id: clinicNetId } });
           medflexKey = clinicNet?.medflexKey ?? null;
         }
-        return this.medflexService.executeTool(name, args, clientId, medflexKey);
+        // lpuGroupId = clinicNetId (MedFlex lpu_group_id совпадает с нашим clinicNetId)
+        return this.medflexService.executeTool(name, args, clientId, medflexKey, clinicNetId, townId, districtId);
       }
 
       // Локальная БД (misType не задан или неизвестен)

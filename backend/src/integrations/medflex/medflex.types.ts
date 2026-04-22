@@ -1,72 +1,144 @@
 /**
- * Типы данных API MedFlex.
+ * Типы данных API MedFlex (Открытый токен клиники).
+ * Документация: https://developer.medflex.ru/leadgeneration/
+ * Сервер: https://api.medflex.ru
+ * Авторизация: Token {apiKey} (header Authorization)
  *
- * TODO: заполнить на основе документации MedFlex API.
- * Пока содержит плейсхолдеры, отражающие предполагаемую структуру.
+ * Версии:
+ *   v1 — clinics (lpu), doctors, specialities, schedule/lpu/, direct_appointment/
+ *   v2 — schedule/ (с town_id), towns, districts, metro
  */
 
-// ── Конфигурация ─────────────────────────────────────────────────────────────
+// ── Пагинация ─────────────────────────────────────────────────────────────────
 
-export interface MedflexConfig {
-  /** Базовый URL API MedFlex */
-  apiUrl: string;
-  /** API-ключ клиники (хранится в clinic_nets.medflex_key) */
-  apiKey: string;
+export interface MfPage<T> {
+  count: number;
+  num_pages: number;
+  links: { next: string | null; previous: string | null };
+  data: T[];
 }
 
-// ── Заглушки типов ответов ────────────────────────────────────────────────────
-// Будут уточнены после получения документации API MedFlex.
+// ── Справочники ───────────────────────────────────────────────────────────────
 
-export interface MfClinic {
+export interface MfSpeciality {
   id: number;
   name: string;
-  address?: string;
+}
+
+export interface MfLpu {
+  id: number;
+  lpu_group_id: number | null;
+  name: string;
+  address: string;
   phone?: string;
+  town_id: number;
+  town_name?: string;
+  district_id?: number;
+  lon?: number;
+  lat?: number;
+  direct_appointment_is_supported: boolean;
+  cancel_appointment_is_supported: boolean;
+  is_visible: boolean;
+  specialities: number[];
+}
+
+export interface MfDoctorPrice {
+  lpu_id?: number;
+  speciality_id: number;
+  price: number | null;
 }
 
 export interface MfDoctor {
   id: number;
-  name: string;
-  speciality: string;
-  clinicId: number;
-  clinicName: string;
-  price?: number;
+  efio: string;
+  specialities: number[];
+  lpus: number[];
+  prices?: MfDoctorPrice[];
+  rating?: { stars: number; public: number };
 }
 
-export interface MfSlot {
-  id: string;
-  doctorId: number;
-  clinicId: number;
-  date: string;   // YYYY-MM-DD
-  time: string;   // HH:MM
-  isFree: boolean;
+// ── Расписание ────────────────────────────────────────────────────────────────
+
+/** Слот расписания: формат "YYYY-MM-DD HH:MM" */
+export interface MfCell {
+  dt_start: string;
+  dt_end: string;
 }
+
+export interface MfDoctorSchedule {
+  doctor_id: number;
+  prices: { speciality_id: number; price: number | null }[];
+  allowed_age: { speciality_id: number; min: number; max: number }[];
+  cells: MfCell[];
+}
+
+export interface MfLpuSchedule {
+  lpu_id: number;
+  schedule: MfDoctorSchedule[];
+}
+
+// ── Запись ────────────────────────────────────────────────────────────────────
 
 export interface MfBookingRequest {
-  doctorId: number;
-  clinicId: number;
-  date: string;    // YYYY-MM-DD
-  time: string;    // HH:MM
-  patientComment?: string;
+  doctor: {
+    id: number;
+    lpu_id: number;
+    speciality_id: number;
+  };
+  appointment: {
+    dt_start: string;  // ISO date-time
+    dt_end: string;    // ISO date-time
+    price: number;
+    comment?: string;
+  };
+  client: {
+    first_name: string;
+    last_name: string;
+    second_name: string;   // отчество, обязательно (пустая строка если нет)
+    mobile_phone: string;  // 79000000000
+    birthday: string;      // YYYY-MM-DD
+  };
 }
 
-export interface MfBookingResult {
-  success: boolean;
-  appointmentId?: string;
-  message: string;
+export interface MfBookingResponse {
+  claim_id: string;  // UUID созданной записи
 }
 
-export interface MfCancelResult {
-  success: boolean;
-  message: string;
+export interface MfCancelRequest {
+  uuid: string;
 }
 
-// ── Контракт клиента ──────────────────────────────────────────────────────────
+// ── История записей ───────────────────────────────────────────────────────────
 
-export interface IMedflexClient {
-  getClinics(): Promise<MfClinic[]>;
-  getDoctors(speciality?: string, clinicId?: number): Promise<MfDoctor[]>;
-  getSlots(doctorId: number, fromDate: string, toDate: string, clinicId?: number): Promise<MfSlot[]>;
-  bookAppointment(request: MfBookingRequest): Promise<MfBookingResult>;
-  cancelAppointment(appointmentId: string): Promise<MfCancelResult>;
+export interface MfAppointmentHistory {
+  id: number;
+  uuid: string;
+  date: string;
+  time_start: string;
+  time_end: string;
+  price: number;
+  canceled: boolean;
+  lpu: { id: number; name: string; address: string };
+  doctor: { id: number; fio: string; speciality_id: number; speciality_name: string };
+  patient: {
+    mobile_phone: string;
+    first_name: string;
+    second_name: string;
+    last_name: string;
+    birthday: string;
+  };
+}
+
+// ── Географические модели (v2, для будущей геофильтрации) ────────────────────
+
+export interface MfTown {
+  id: number;
+  name: string;
+  region_id?: number;
+}
+
+export interface MfDistrict {
+  id: number;
+  name: string;
+  town_id: number;
 }

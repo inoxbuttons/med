@@ -66,12 +66,14 @@ export class ChatService implements OnModuleInit {
   }
 
   async sendMessage(dto: SendMessageDto): Promise<SendMessageResponse> {
-    const { sessionId, message, provider = 'gigachat', model, clientId, clinicNetId, misType } = dto;
+    const { sessionId, message, provider = 'gigachat', model, clientId, clinicNetId, misType, townId, districtId } = dto;
 
     const session = this.getOrCreateSession(sessionId, provider, model);
     // Обновляем идентификаторы сессии если переданы
     if (clientId    !== undefined) session.clientId    = clientId;
     if (clinicNetId !== undefined) session.clinicNetId = clinicNetId;
+    if (townId      !== undefined) session.townId      = townId;
+    if (districtId  !== undefined) session.districtId  = districtId;
     // misType устанавливается один раз при первом запросе и не меняется
     if (misType !== undefined && session.misType === undefined) session.misType = misType;
     session.messages.push({ role: 'user', content: message });
@@ -110,6 +112,8 @@ export class ChatService implements OnModuleInit {
           session.clientId,
           session.misType ?? undefined,
           session.clinicNetId,
+          session.townId,
+          session.districtId,
         );
         // GigaChat-Pro requires assistant function_call before every function result
         session.messages.push({ role: 'assistant', content: '', function_call: { name: 'book_appointment', arguments: JSON.stringify({ doctorId: pc.newDoctorId, clinicId: pc.newClinicId, startTime: pc.newStartTime }) } });
@@ -317,7 +321,7 @@ export class ChatService implements OnModuleInit {
       }
 
       // Execute tool
-      const toolResult = await this.booking.executeTool(result.toolName, result.toolArgs, sessionId, session.clientId, session.misType ?? undefined, session.clinicNetId);
+      const toolResult = await this.booking.executeTool(result.toolName, result.toolArgs, sessionId, session.clientId, session.misType ?? undefined, session.clinicNetId, session.townId, session.districtId);
 
       // Append tool result as function message to context and session
       const funcMsg: ChatMessage = {
