@@ -91,14 +91,24 @@ export class ChatService implements OnModuleInit {
     session.updatedAt = new Date();
 
     // Resolve pending conflict before LLM call, based on user's answer.
-    // pendingConflict is only set for local DB (MedFlex/infoclinica skip checkPatientTimeConflict).
     if (session.pendingConflict) {
       const pc = session.pendingConflict;
-      if (/замени|заменить|замените|заменяй/i.test(message)) {
+      const wantsReplace = /замени|заменить|замените|заменяй/i.test(message);
+      const wantsOtherTime = /другое время|другой|выберу|выбрать|перенесем|перенести|поменяем|поменять время/i.test(message);
+
+      if (wantsReplace) {
         session.pendingConflict = undefined;
         session.state = 'idle';
         let rescheduleResult: unknown;
-        if (!session.misType) {
+        if (session.misType === 'medflex' && pc.oldUuid) {
+          // MedFlex: cancel old by UUID, then rebook with stored args
+          await this.booking.executeTool('cancel_appointment', { uuid: pc.oldUuid }, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
+          rescheduleResult = await this.booking.executeTool('book_appointment', pc.pendingBookingArgs ?? { doctorId: pc.newDoctorId, clinicId: pc.newClinicId, startTime: pc.newStartTime }, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
+        } else if (session.misType && session.misType !== 'medflex') {
+          // Other external MIS
+          await this.booking.executeTool('cancel_appointment', { id: pc.oldId, type: pc.oldType }, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
+          rescheduleResult = await this.booking.executeTool('book_appointment', { doctorId: pc.newDoctorId, serviceId: pc.newServiceId, clinicId: pc.newClinicId, startTime: pc.newStartTime }, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
+        } else {
           // Local DB: atomic reschedule (cancel old + book new)
           rescheduleResult = await this.booking.rescheduleAppointment({
             oldId: pc.oldId,
@@ -109,18 +119,14 @@ export class ChatService implements OnModuleInit {
             newStartTime: pc.newStartTime,
             patientId: session.clientId,
           });
-        } else {
-          // External MIS: delegate both steps through executeTool
-          // MedFlex cancel uses { uuid }, infoclinica uses { id }
-          const cancelArgs = session.misType === 'medflex'
-            ? { uuid: String(pc.oldId) }
-            : { id: pc.oldId, type: pc.oldType };
-          await this.booking.executeTool('cancel_appointment', cancelArgs, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
-          rescheduleResult = await this.booking.executeTool('book_appointment', { doctorId: pc.newDoctorId, serviceId: pc.newServiceId, clinicId: pc.newClinicId, startTime: pc.newStartTime }, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
         }
         // GigaChat-Pro requires assistant function_call before every function result
-        session.messages.push({ role: 'assistant', content: '', function_call: { name: 'reschedule_appointment', arguments: JSON.stringify({ oldId: pc.oldId, type: pc.oldType, newStartTime: pc.newStartTime }) } });
+        session.messages.push({ role: 'assistant', content: '', function_call: { name: 'reschedule_appointment', arguments: JSON.stringify({ oldId: pc.oldUuid ?? pc.oldId, newStartTime: pc.newStartTime }) } });
         session.messages.push({ role: 'function', name: 'reschedule_appointment', content: JSON.stringify(rescheduleResult) });
+      } else if (wantsOtherTime || (session.misType === 'medflex' && /оставить|оставь|другой|нет/i.test(message))) {
+        // User wants to pick a different time — clear conflict state
+        session.pendingConflict = undefined;
+        session.state = 'idle';
       } else if (/оставить|оставь|оставьте|оставим|оставляем|обе|оба|не замен/i.test(message)) {
         session.pendingConflict = undefined;
         session.state = 'idle';
@@ -156,11 +162,22 @@ export class ChatService implements OnModuleInit {
     // Rec 6+7: merge conflict state into the system prompt (GigaChat requires system to be first message only)
     if (session.state === 'conflict_resolution' && session.pendingConflict) {
       const pc = session.pendingConflict;
-      systemWithDate +=
-        `\n\nТЕКУЩЕЕ СОСТОЯНИЕ: режим разрешения конфликта.` +
-        ` Существующая запись: ${pc.oldId} (тип: ${pc.oldType}), новое время: ${pc.newStartTime}.` +
-        ` Ожидается ответ пациента: "оставить обе записи" или "заменить старую".` +
-        ` НЕ предлагай новых записей. НЕ вызывай инструменты.`;
+      if (pc.oldUuid) {
+        // MedFlex: old appointment identified by UUID
+        const desc = pc.existingDescription ?? pc.oldUuid;
+        systemWithDate +=
+          `\n\nТЕКУЩЕЕ СОСТОЯНИЕ: режим разрешения конфликта MedFlex.` +
+          ` Существующая запись: ${desc}.` +
+          ` Ожидается ответ пациента: "заменить" (отменить старую и создать новую) или "выбрать другое время".` +
+          ` НЕ вызывай инструменты.`;
+      } else {
+        // Local DB
+        systemWithDate +=
+          `\n\nТЕКУЩЕЕ СОСТОЯНИЕ: режим разрешения конфликта.` +
+          ` Существующая запись: ${pc.oldId} (тип: ${pc.oldType}), новое время: ${pc.newStartTime}.` +
+          ` Ожидается ответ пациента: "оставить обе записи" или "заменить старую".` +
+          ` НЕ предлагай новых записей. НЕ вызывай инструменты.`;
+      }
     }
 
     let reply: string;
@@ -350,6 +367,44 @@ export class ChatService implements OnModuleInit {
 
       // Execute tool
       const toolResult = await this.booking.executeTool(result.toolName, result.toolArgs, sessionId, session.clientId, session.misType ?? undefined, session.clinicNetId, session.townId, session.districtId, session.patient);
+
+      // MedFlex 409 conflict: save pending conflict and ask user to choose
+      if ((toolResult as any)?.conflict === true && result.toolName === 'book_appointment') {
+        const cr = toolResult as any;
+        session.pendingConflict = {
+          oldId: 0,
+          oldType: 'doctor',
+          oldUuid: cr.existingAppointment?.uuid,
+          existingDescription: cr.existingAppointment?.description,
+          newDoctorId: result.toolArgs.doctorId,
+          newServiceId: result.toolArgs.serviceId,
+          newClinicId: result.toolArgs.clinicId,
+          newStartTime: result.toolArgs.startTime as string,
+          pendingBookingArgs: cr.pendingBookingArgs,
+        };
+        session.state = 'conflict_resolution';
+
+        const conflictFuncMsg: ChatMessage = {
+          role: 'function',
+          name: result.toolName,
+          content: JSON.stringify(toolResult),
+        };
+        context.push(conflictFuncMsg);
+        session.messages.push(conflictFuncMsg);
+
+        if (context[0]?.role === 'system') {
+          context[0].content +=
+            '\n\nТЕКУЩЕЕ СОСТОЯНИЕ: обнаружен конфликт записи MedFlex.' +
+            ' Объясни пациенту, что в это время уже есть запись (см. поле existingAppointment).' +
+            ' Предложи два варианта: "заменить" (отменить старую и создать новую) или "выбрать другое время".' +
+            ' НЕ вызывай инструменты.';
+        }
+        const conflictTextResult =
+          session.provider === 'gigachat'
+            ? await this.gigaChat.complete(context, tools, session.model, true)
+            : await this.openAi.complete(context, tools, session.model);
+        return conflictTextResult.type === 'text' ? conflictTextResult.content : 'Уточните ваш выбор.';
+      }
 
       // Append tool result as function message to context and session
       const funcMsg: ChatMessage = {

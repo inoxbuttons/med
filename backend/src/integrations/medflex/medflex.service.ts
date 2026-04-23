@@ -237,7 +237,26 @@ export class MedflexService {
             if (!bookArgs.phone)       bookArgs.phone       = patient.phone;
             if (!bookArgs.birthday)    bookArgs.birthday    = patient.birthday;
           }
-          return this.bookAppointment(client, bookArgs as any);
+          try {
+            return await this.bookAppointment(client, bookArgs as any);
+          } catch (bookErr: any) {
+            const bookErrMsg = String(bookErr.message ?? bookErr);
+            if (bookErrMsg.includes('409')) {
+              // Ищем конфликтующую запись по телефону и дате через history API
+              const existing = await this.findConflictingAppointment(
+                client,
+                bookArgs.phone as string | undefined,
+                bookArgs.startTime as string,
+              );
+              return {
+                success: false,
+                conflict: true,
+                existingAppointment: existing,
+                pendingBookingArgs: bookArgs,
+              };
+            }
+            throw bookErr;
+          }
         }
 
         case 'cancel_appointment':
@@ -257,14 +276,45 @@ export class MedflexService {
       }
     } catch (err: any) {
       this.logger.error(`MedFlex tool ${name} error: ${String(err)}`);
-      // Разбираем коды ошибок MedFlex
+      // Разбираем коды ошибок MedFlex (409 обрабатывается внутри book_appointment case)
       const msg = String(err.message ?? err);
       if (msg.includes('423')) return { error: 'Выбранный слот уже занят. Пожалуйста, выберите другое время.' };
-      if (msg.includes('409')) return { error: 'У пациента уже есть запись рядом с этим временем. Проверьте расписание.' };
       if (msg.includes('400')) return { error: 'Запись не удалась. Возможно, слот недоступен. Уточните данные и попробуйте снова.' };
       if (msg.includes('401')) return { error: 'Ошибка авторизации MedFlex. Обратитесь к администратору.' };
       if (msg.includes('429')) return { error: 'Превышен лимит запросов. Пожалуйста, подождите минуту и повторите.' };
       return { error: `Ошибка при выполнении ${name}. Пожалуйста, уточни данные и попробуй снова.` };
+    }
+  }
+
+  /**
+   * Ищет активную запись пациента на дату конфликтующего слота через API истории.
+   * Используется при обработке 409 от book_appointment.
+   */
+  private async findConflictingAppointment(
+    client: MedflexClient,
+    phone: string | undefined,
+    startTime: string,
+  ): Promise<{ uuid: string; description: string } | null> {
+    if (!phone) return null;
+    const normalizedPhone = phone.replace(/\D/g, '');
+    const date = startTime.slice(0, 10); // YYYY-MM-DD
+    try {
+      const history = await client.getAppointmentHistory({
+        mobilePhone: normalizedPhone,
+        dateStart: date,
+        dateEnd: date,
+        size: 10,
+      });
+      const active = history.data.filter((a) => !a.canceled);
+      if (active.length === 0) return null;
+      const a = active[0];
+      return {
+        uuid: a.uuid,
+        description: `${a.date} в ${a.time_start.slice(0, 5)} у ${a.doctor.fio} в ${a.lpu.name}`,
+      };
+    } catch (err) {
+      this.logger.warn(`Could not fetch conflicting appointment: ${String(err)}`);
+      return null;
     }
   }
 

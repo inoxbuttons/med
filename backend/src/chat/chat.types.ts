@@ -70,12 +70,22 @@ export interface SendMessageResponse {
 }
 
 export interface PendingConflict {
+  /** ID записи в локальной БД (только для local mis). */
   oldId: number;
   oldType: 'doctor' | 'service';
+  /** UUID записи MedFlex — используется для отмены при resolving конфликта. */
+  oldUuid?: string;
+  /** Описание существующей записи для показа пациенту. */
+  existingDescription?: string;
   newDoctorId?: number;
   newServiceId?: number;
   newClinicId: number;
   newStartTime: string;
+  /**
+   * Полные аргументы для повторного вызова book_appointment (MedFlex).
+   * Хранятся, чтобы переиспользовать при замене записи без повторного ввода данных.
+   */
+  pendingBookingArgs?: Record<string, any>;
 }
 
 export type SessionState = 'idle' | 'conflict_resolution';
