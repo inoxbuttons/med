@@ -173,10 +173,15 @@
 
 <script>
   const _params = new URLSearchParams(window.location.search);
-  const SESSION_ID   = _params.get('session')      || 'site-' + Math.random().toString(36).slice(2, 9);
-  const CLIENT_ID     = _params.get('clientId')    ? Number(_params.get('clientId'))    : null;
+  const SESSION_ID    = _params.get('session')      || 'site-' + Math.random().toString(36).slice(2, 9);
   const CLINIC_NET_ID = _params.get('clinicNetId') ? Number(_params.get('clinicNetId')) : null;
   const MIS_TYPE      = _params.get('misType')     || null;
+  // Зашифрованные данные пациента — передаются один раз на первом запросе
+  let _encryptedPatient = null;
+  try {
+    const raw = _params.get('client-data');
+    if (raw) _encryptedPatient = JSON.parse(raw);
+  } catch (e) { /* ignore */ }
   const _isLocal = window.location.protocol === 'file:' ||
                    (window.location.hostname === 'localhost' && window.location.port === '');
   const API = _isLocal ? 'http://localhost:3000/chat/message' : '/api/chat/message';
@@ -240,6 +245,10 @@
     showTyping();
 
     try {
+      // Передаём encryptedPatient только один раз (на первом запросе), затем обнуляем
+      const encryptedPatient = _encryptedPatient;
+      _encryptedPatient = null;
+
       const res = await fetch(API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -247,9 +256,9 @@
           sessionId: SESSION_ID,
           message: text,
           provider: 'gigachat',
-          ...(CLIENT_ID     ? { clientId: CLIENT_ID }         : {}),
-          ...(CLINIC_NET_ID ? { clinicNetId: CLINIC_NET_ID }  : {}),
-          ...(MIS_TYPE      ? { misType: MIS_TYPE }           : {}),
+          ...(CLINIC_NET_ID      ? { clinicNetId: CLINIC_NET_ID }      : {}),
+          ...(MIS_TYPE           ? { misType: MIS_TYPE }               : {}),
+          ...(encryptedPatient   ? { encryptedPatient }                : {}),
         })
       });
       const data = await res.json();

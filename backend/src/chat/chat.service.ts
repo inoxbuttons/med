@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OpenAiService } from '../llm/openai.service';
@@ -7,7 +8,9 @@ import { GigaChatService } from '../llm/gigachat.service';
 import { BookingService } from '../booking/booking.service';
 import {
   ChatMessage,
+  EncryptedPatient,
   LlmProvider,
+  PatientData,
   PendingConflict,
   SendMessageDto,
   SendMessageResponse,
@@ -66,7 +69,7 @@ export class ChatService implements OnModuleInit {
   }
 
   async sendMessage(dto: SendMessageDto): Promise<SendMessageResponse> {
-    const { sessionId, message, provider = 'gigachat', model, clientId, clinicNetId, misType, townId, districtId } = dto;
+    const { sessionId, message, provider = 'gigachat', model, clientId, clinicNetId, misType, townId, districtId, encryptedPatient } = dto;
 
     const session = this.getOrCreateSession(sessionId, provider, model);
     // Обновляем идентификаторы сессии если переданы
@@ -76,6 +79,14 @@ export class ChatService implements OnModuleInit {
     if (districtId  !== undefined) session.districtId  = districtId;
     // misType устанавливается один раз при первом запросе и не меняется
     if (misType !== undefined && session.misType === undefined) session.misType = misType;
+    // Расшифровываем данные пациента при первом запросе (один раз)
+    if (encryptedPatient && !session.patient) {
+      try {
+        session.patient = decryptPatientData(encryptedPatient, this.config.get<string>('PATIENT_DATA_PRIVATE_KEY', ''));
+      } catch (err) {
+        this.logger.warn(`Failed to decrypt patient data for session ${sessionId}: ${String(err)}`);
+      }
+    }
     session.messages.push({ role: 'user', content: message });
     session.updatedAt = new Date();
 
@@ -114,6 +125,7 @@ export class ChatService implements OnModuleInit {
           session.clinicNetId,
           session.townId,
           session.districtId,
+          session.patient,
         );
         // GigaChat-Pro requires assistant function_call before every function result
         session.messages.push({ role: 'assistant', content: '', function_call: { name: 'book_appointment', arguments: JSON.stringify({ doctorId: pc.newDoctorId, clinicId: pc.newClinicId, startTime: pc.newStartTime }) } });
@@ -168,7 +180,7 @@ export class ChatService implements OnModuleInit {
     session: SessionData,
   ): Promise<string> {
     const symptomSystemPrompt =
-      `Ты — медицинский ассистент клиники «XXI Век». ` +
+      `Ты — медицинский ассистент клиники. ` +
       `Пациент описал жалобу. Ответь СТРОГО по шаблону (2–3 предложения): ` +
       `сначала кратко объясни возможные причины симптома (без постановки диагноза), ` +
       `затем предложи записаться к одному или двум специалистам из этого списка: ${CLINIC_SPECIALISTS}. ` +
@@ -321,7 +333,7 @@ export class ChatService implements OnModuleInit {
       }
 
       // Execute tool
-      const toolResult = await this.booking.executeTool(result.toolName, result.toolArgs, sessionId, session.clientId, session.misType ?? undefined, session.clinicNetId, session.townId, session.districtId);
+      const toolResult = await this.booking.executeTool(result.toolName, result.toolArgs, sessionId, session.clientId, session.misType ?? undefined, session.clinicNetId, session.townId, session.districtId, session.patient);
 
       // Append tool result as function message to context and session
       const funcMsg: ChatMessage = {
@@ -375,4 +387,33 @@ export class ChatService implements OnModuleInit {
       this.logger.log(`Cleaned ${removed} expired chat sessions`);
     }
   }
+}
+
+/**
+ * Расшифровывает данные пациента, зашифрованные по схеме RSA-OAEP + AES-256-GCM.
+ * Приватный ключ берётся из переменной окружения PATIENT_DATA_PRIVATE_KEY.
+ */
+function decryptPatientData(encrypted: EncryptedPatient, privateKeyPem: string): PatientData {
+  if (!privateKeyPem) throw new Error('PATIENT_DATA_PRIVATE_KEY не задан');
+  // Поддерживаем как реальные переводы строк, так и экранированные \n из .env
+  privateKeyPem = privateKeyPem.replace(/\\n/g, '\n');
+
+  // 1. Расшифровываем AES-ключ приватным RSA-ключом
+  const encryptedAesKey = Buffer.from(encrypted.k, 'base64');
+  const aesKey = crypto.privateDecrypt(
+    { key: privateKeyPem, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
+    encryptedAesKey,
+  );
+
+  // 2. Расшифровываем данные через AES-256-GCM
+  const iv = Buffer.from(encrypted.iv, 'base64');
+  const encryptedWithTag = Buffer.from(encrypted.d, 'base64');
+  const authTag = encryptedWithTag.subarray(encryptedWithTag.length - 16);
+  const ciphertext = encryptedWithTag.subarray(0, encryptedWithTag.length - 16);
+
+  const decipher = crypto.createDecipheriv('aes-256-gcm', aesKey, iv);
+  decipher.setAuthTag(authTag);
+
+  const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+  return JSON.parse(decrypted.toString('utf8')) as PatientData;
 }

@@ -21,6 +21,7 @@ import {
   CancellableAppointment,
   SlotMode,
 } from '../../booking/booking.service';
+import { PatientData } from '../../chat/chat.types';
 
 // ── Кэш специальностей ────────────────────────────────────────────────────────
 
@@ -169,6 +170,7 @@ export class MedflexService {
     lpuGroupId?: number,
     townId?: number,
     districtId?: number,
+    patient?: PatientData,
   ): Promise<unknown> {
     if (!apiKey) {
       this.logger.warn(`MedFlex tool '${name}' called without API key`);
@@ -225,8 +227,18 @@ export class MedflexService {
           });
         }
 
-        case 'book_appointment':
-          return this.bookAppointment(client, args as any);
+        case 'book_appointment': {
+          // Автозаполняем данные пациента из сессии, если не переданы в args
+          const bookArgs = { ...args };
+          if (patient) {
+            if (!bookArgs.firstName)   bookArgs.firstName   = patient.firstName;
+            if (!bookArgs.lastName)    bookArgs.lastName    = patient.lastName;
+            if (!bookArgs.secondName)  bookArgs.secondName  = patient.secondName;
+            if (!bookArgs.phone)       bookArgs.phone       = patient.phone;
+            if (!bookArgs.birthday)    bookArgs.birthday    = patient.birthday;
+          }
+          return this.bookAppointment(client, bookArgs as any);
+        }
 
         case 'cancel_appointment':
           if (!args.uuid) return { error: 'UUID записи не указан.' };

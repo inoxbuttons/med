@@ -1143,6 +1143,7 @@
   </div>
 </div>
 
+<script src="patient-crypto.js"></script>
 <script>
   // ── Session ID / user (cookie) ──
   function getCookie(name) {
@@ -1171,18 +1172,25 @@
   }
 
   // ── Chat popup ──
-  function openChat(e) {
+  async function openChat(e) {
     if (e) e.preventDefault();
     var sid        = (typeof PHP_SESSION_ID     !== 'undefined') ? PHP_SESSION_ID     : getOrCreateSessionId();
-    var clientId   = (typeof PHP_CLIENT_ID      !== 'undefined') ? PHP_CLIENT_ID      : (getCurrentUser() || {}).clientId;
     var clinicNetId = (typeof PHP_CLINIC_NET_ID !== 'undefined') ? PHP_CLINIC_NET_ID  : (getCurrentUser() || {}).clinicNetId;
     var misType    = (typeof PHP_MIS_TYPE       !== 'undefined') ? PHP_MIS_TYPE       : 'medflex';
+    var patient    = (typeof PHP_PATIENT        !== 'undefined') ? PHP_PATIENT        : (getCurrentUser() || {}).patient;
     var frame = document.getElementById('xxiChatFrame');
     if (!frame.src || frame.src === window.location.href) {
       var url = 'chat.html?session=' + encodeURIComponent(sid);
-      if (clientId)    url += '&clientId='    + encodeURIComponent(clientId);
       if (clinicNetId) url += '&clinicNetId=' + encodeURIComponent(clinicNetId);
       if (misType)     url += '&misType='     + encodeURIComponent(misType);
+      if (patient) {
+        try {
+          var encrypted = await encryptPatientData(patient);
+          url += '&client-data=' + encodeURIComponent(JSON.stringify(encrypted));
+        } catch (err) {
+          console.warn('encryptPatientData failed:', err);
+        }
+      }
       frame.src = url;
     }
     document.getElementById('xxiChatOverlay').classList.add('open');
@@ -1214,7 +1222,11 @@
 
   // ── Пользователи ──
   const USERS = [
-    { login: 'elena', password: 'root', name: 'Елена Владимировна', initials: 'ЕВ', clientId: 1, clinicNetId: 1 }
+    {
+      login: 'elena', password: 'root', name: 'Елена Владимировна', initials: 'ЕВ',
+      clientId: 1, clinicNetId: 1,
+      patient: { firstName: 'Елена', lastName: 'Иванова', secondName: 'Владимировна', phone: '79161234567', birthday: '1985-03-15' },
+    }
   ];
 
   var _loggedIn = false;
@@ -1282,7 +1294,7 @@
 
     closeLogin();
     setAuthButtons(true);
-    _currentUser = { clientId: user.clientId, clinicNetId: user.clinicNetId };
+    _currentUser = { clientId: user.clientId, clinicNetId: user.clinicNetId, patient: user.patient };
     setCookie('med_user', JSON.stringify(_currentUser), 30);
     document.getElementById('main-site').style.display = 'none';
     document.getElementById('dashboard').classList.add('open');

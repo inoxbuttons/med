@@ -17,6 +17,31 @@ export interface ChatMessage {
 /** Тип МИС, передаётся виджетом как параметр. Null — используется локальная БД. */
 export type MisType = 'infoclinica' | 'medflex' | null;
 
+/** Данные пациента, получаемые с сайта клиники и хранящиеся в сессии. */
+export interface PatientData {
+  firstName: string;
+  lastName: string;
+  secondName?: string;
+  /** Телефон в формате 79XXXXXXXXX (11 цифр) — используется как patient_id в MedFlex */
+  phone: string;
+  /** Дата рождения YYYY-MM-DD */
+  birthday: string;
+}
+
+/**
+ * Гибридно-зашифрованный payload с данными пациента.
+ * Схема: AES-256-GCM(данные) + RSA-OAEP(AES-ключ).
+ * Шифруется публичным ключом клиники на сайте, расшифровывается на сервере.
+ */
+export interface EncryptedPatient {
+  /** base64(RSA-OAEP зашифрованный AES-256 ключ) */
+  k: string;
+  /** base64(GCM IV, 12 байт) */
+  iv: string;
+  /** base64(AES-GCM ciphertext + 16-байтный auth tag) */
+  d: string;
+}
+
 export interface SendMessageDto {
   sessionId: string;
   message: string;
@@ -30,6 +55,12 @@ export interface SendMessageDto {
   townId?: number;
   /** ID района (MedFlex district_id) для геофильтрации. Зарезервировано. */
   districtId?: number;
+  /**
+   * Зашифрованные данные пациента с сайта клиники.
+   * Расшифровываются на первом запросе и сохраняются в session.patient.
+   * После расшифровки в session.patient — дальше не нужны.
+   */
+  encryptedPatient?: EncryptedPatient;
 }
 
 export interface SendMessageResponse {
@@ -61,6 +92,12 @@ export interface SessionData {
   townId?: number;
   /** ID района (MedFlex district_id) для геофильтрации расписания. */
   districtId?: number;
+  /**
+   * Данные пациента, расшифрованные из encryptedPatient при инициализации сессии.
+   * Используются для автозаполнения при записи (MedFlex и другие МИС).
+   * phone используется как patient_id в MedFlex.
+   */
+  patient?: PatientData;
   pendingConflict?: PendingConflict;
   state: SessionState;
   createdAt: Date;

@@ -22,6 +22,7 @@ import {
   DEFAULT_SEARCH_DAYS,
 } from './booking.constants';
 import { LlmTool } from '../llm/llm.types';
+import { PatientData } from '../chat/chat.types';
 
 export type SlotMode = 'nearest' | 'day' | 'week';
 
@@ -1214,6 +1215,7 @@ export class BookingService {
     clinicNetId?: number,
     townId?: number,
     districtId?: number,
+    patient?: PatientData,
   ): Promise<unknown> {
     try {
       // Маршрутизация по типу МИС (передаётся виджетом напрямую)
@@ -1228,7 +1230,7 @@ export class BookingService {
           medflexKey = clinicNet?.medflexKey ?? null;
         }
         // lpuGroupId = clinicNetId (MedFlex lpu_group_id совпадает с нашим clinicNetId)
-        return this.medflexService.executeTool(name, args, clientId, medflexKey, clinicNetId, townId, districtId);
+        return this.medflexService.executeTool(name, args, clientId, medflexKey, clinicNetId, townId, districtId, patient);
       }
 
       // Локальная БД (misType не задан или неизвестен)
