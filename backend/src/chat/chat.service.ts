@@ -90,21 +90,34 @@ export class ChatService implements OnModuleInit {
     session.messages.push({ role: 'user', content: message });
     session.updatedAt = new Date();
 
-    // Resolve pending conflict before LLM call, based on user's answer
+    // Resolve pending conflict before LLM call, based on user's answer.
+    // pendingConflict is only set for local DB (MedFlex/infoclinica skip checkPatientTimeConflict).
     if (session.pendingConflict) {
       const pc = session.pendingConflict;
       if (/замени|заменить|замените|заменяй/i.test(message)) {
         session.pendingConflict = undefined;
         session.state = 'idle';
-        const rescheduleResult = await this.booking.rescheduleAppointment({
-          oldId: pc.oldId,
-          type: pc.oldType,
-          doctorId: pc.newDoctorId,
-          serviceId: pc.newServiceId,
-          clinicId: pc.newClinicId,
-          newStartTime: pc.newStartTime,
-          patientId: session.clientId,
-        });
+        let rescheduleResult: unknown;
+        if (!session.misType) {
+          // Local DB: atomic reschedule (cancel old + book new)
+          rescheduleResult = await this.booking.rescheduleAppointment({
+            oldId: pc.oldId,
+            type: pc.oldType,
+            doctorId: pc.newDoctorId,
+            serviceId: pc.newServiceId,
+            clinicId: pc.newClinicId,
+            newStartTime: pc.newStartTime,
+            patientId: session.clientId,
+          });
+        } else {
+          // External MIS: delegate both steps through executeTool
+          // MedFlex cancel uses { uuid }, infoclinica uses { id }
+          const cancelArgs = session.misType === 'medflex'
+            ? { uuid: String(pc.oldId) }
+            : { id: pc.oldId, type: pc.oldType };
+          await this.booking.executeTool('cancel_appointment', cancelArgs, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
+          rescheduleResult = await this.booking.executeTool('book_appointment', { doctorId: pc.newDoctorId, serviceId: pc.newServiceId, clinicId: pc.newClinicId, startTime: pc.newStartTime }, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
+        }
         // GigaChat-Pro requires assistant function_call before every function result
         session.messages.push({ role: 'assistant', content: '', function_call: { name: 'reschedule_appointment', arguments: JSON.stringify({ oldId: pc.oldId, type: pc.oldType, newStartTime: pc.newStartTime }) } });
         session.messages.push({ role: 'function', name: 'reschedule_appointment', content: JSON.stringify(rescheduleResult) });
@@ -152,7 +165,9 @@ export class ChatService implements OnModuleInit {
 
     let reply: string;
     try {
-      if (isSymptomMessage(message)) {
+      // Symptom shortcut only for local DB / infoclinica — for MedFlex the tool loop
+      // handles symptoms via find_doctors with real specialities from the API
+      if (isSymptomMessage(message) && session.misType !== 'medflex') {
         reply = await this.handleSymptomMessage(message, systemWithDate, session);
       } else {
         const context: ChatMessage[] = [
@@ -286,8 +301,9 @@ export class ChatService implements OnModuleInit {
           continue;
         }
 
-        // Warn if patient already has an appointment at the same time slot
-        if (result.toolName === 'book_appointment' && session.clientId && result.toolArgs.startTime) {
+        // Warn if patient already has an appointment at the same time slot.
+        // Only applicable for local DB — MedFlex/infoclinica handle conflicts on their own.
+        if (result.toolName === 'book_appointment' && !session.misType && session.clientId && result.toolArgs.startTime) {
           const conflict = await this.booking.checkPatientTimeConflict(
             session.clientId,
             result.toolArgs.startTime as string,
