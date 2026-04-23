@@ -689,15 +689,31 @@ export class MedflexService {
 
 // ── Утилиты ───────────────────────────────────────────────────────────────────
 
-/** "YYYY-MM-DD HH:MM" → Date */
+/**
+ * Парсит строку даты-времени MedFlex в объект Date.
+ * Поддерживает: "YYYY-MM-DD HH:MM", "YYYY-MM-DD HH:MM:SS",
+ *               "YYYY-MM-DDTHH:MM", "YYYY-MM-DDTHH:MM:SS[Z|±HH:MM]"
+ */
 function parseMfDateTime(s: string): Date {
-  // "2024-01-15 08:00" → "2024-01-15T08:00:00"
-  return new Date(s.replace(' ', 'T') + ':00');
+  return new Date(mfDateTimeToIso(s));
 }
 
-/** "YYYY-MM-DD HH:MM" → ISO 8601 string для API MedFlex */
+/**
+ * Нормализует строку даты-времени в ISO 8601 для API MedFlex.
+ * Вход: любой из вариантов "YYYY-MM-DD HH:MM[(:SS)]" или "YYYY-MM-DDTHH:MM[(:SS)(Z|±offset)]"
+ * Выход: "YYYY-MM-DDTHH:MM:SS" (без суффикса зоны, если входная строка его не содержит)
+ */
 function mfDateTimeToIso(s: string): string {
-  return s.replace(' ', 'T') + ':00';
+  // Нормализуем пробел-разделитель → T
+  const norm = s.trim().replace(' ', 'T');
+  // Уже корректный ISO с секундами (с зоной или без): возвращаем как есть
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(norm)) return norm;
+  // Есть T, но нет секунд: "...THH:MM" → добавляем ":00"
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(norm)) return norm + ':00';
+  // Дата без времени: добавляем полночь
+  if (/^\d{4}-\d{2}-\d{2}$/.test(norm)) return norm + 'T00:00:00';
+  // Fallback: возвращаем как есть и пусть API разберётся
+  return norm;
 }
 
 function toDateStr(d: Date): string {
