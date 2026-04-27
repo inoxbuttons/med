@@ -17,7 +17,7 @@ const inMemory_js_1 = require("@modelcontextprotocol/sdk/inMemory.js");
 const zod_1 = require("zod");
 const openai_service_1 = require("../llm/openai.service");
 const gigachat_service_1 = require("../llm/gigachat.service");
-const booking_service_1 = require("../booking/booking.service");
+const local_db_service_1 = require("../integrations/local/local-db.service");
 let McpService = McpService_1 = class McpService {
     constructor(openAi, gigaChat, booking) {
         this.openAi = openAi;
@@ -89,6 +89,6 @@ exports.McpService = McpService = McpService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [openai_service_1.OpenAiService,
         gigachat_service_1.GigaChatService,
-        booking_service_1.BookingService])
+        local_db_service_1.LocalDbService])
 ], McpService);
 //# sourceMappingURL=mcp.service.js.map

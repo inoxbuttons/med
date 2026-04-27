@@ -461,15 +461,40 @@ export class MedflexService {
   ): Promise<Array<SlotGroup & { dtSlots: Array<{ dt_start: string; dt_end: string }> }>> {
     const { doctorId, clinicId, mode, targetDate } = params;
 
-    const today = new Date();
-    const fromDate = targetDate ?? toDateStr(today);
+    const now = new Date();
+    const fromDate = targetDate ?? toDateStr(now);
     const days = mode === 'week' ? 14 : 14;
 
-    const schedPage = await client.getScheduleByLpu({
-      lpuIds: String(clinicId),
-      dateStart: fromDate,
-      days,
-    });
+    // Конец периода для запроса истории
+    const toDateObj = new Date(fromDate + 'T00:00:00');
+    toDateObj.setDate(toDateObj.getDate() + days);
+    const toDate = toDateStr(toDateObj);
+
+    // Запрашиваем расписание и историю параллельно
+    const [schedPage, histPage] = await Promise.all([
+      client.getScheduleByLpu({
+        lpuIds: String(clinicId),
+        dateStart: fromDate,
+        days,
+      }),
+      // История записей врача в этой клинике за период.
+      // Используется для точного вычитания занятых слотов, т.к. расписание
+      // может не отражать актуальный статус (кэш на стороне МИС).
+      client.getAppointmentHistory({
+        lpuId: clinicId,
+        doctorId,
+        dateStart: fromDate,
+        dateEnd: toDate,
+        size: 500,
+      }).catch(() => ({ data: [] as any[], count: 0, num_pages: 1, links: { next: null, previous: null } })),
+    ]);
+
+    // Набор занятых слотов: "YYYY-MM-DD HH:MM"
+    const bookedKeys = new Set<string>(
+      histPage.data
+        .filter((h) => !h.canceled)
+        .map((h) => `${h.date} ${h.time_start.slice(0, 5)}`),
+    );
 
     // Объединяем все страницы (для простоты берём первую — обычно хватает)
     const allLpuSchedules = schedPage.data;
@@ -487,11 +512,12 @@ export class MedflexService {
 
     if (doctorSchedules.length === 0) return [];
 
-    // Фильтрация прошедших слотов
-    const now = new Date();
+    // Фильтрация прошедших и уже занятых слотов
     const futureCells = doctorSchedules.filter((cell) => {
       const dt = parseMfDateTime(cell.dt_start);
-      return dt > now;
+      if (dt <= now) return false;
+      // Вычитаем слоты из истории записей (двойная защита помимо schedule API)
+      return !bookedKeys.has(cell.dt_start.slice(0, 16));
     });
 
     // Группируем по дате

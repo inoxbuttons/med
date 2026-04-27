@@ -4,7 +4,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { z } from 'zod';
 import { OpenAiService } from '../llm/openai.service';
 import { GigaChatService } from '../llm/gigachat.service';
-import { BookingService } from '../booking/booking.service';
+import { LocalDbService } from '../integrations/local/local-db.service';
 
 @Injectable()
 export class McpService implements OnModuleInit {
@@ -14,7 +14,7 @@ export class McpService implements OnModuleInit {
   constructor(
     private readonly openAi: OpenAiService,
     private readonly gigaChat: GigaChatService,
-    private readonly booking: BookingService,
+    private readonly booking: LocalDbService,
   ) {
     this.server = new McpServer({ name: 'med-mcp-server', version: '0.1.0' });
   }

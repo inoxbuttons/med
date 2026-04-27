@@ -13,6 +13,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ChatService = void 0;
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const openai_service_1 = require("../llm/openai.service");
@@ -56,30 +57,61 @@ let ChatService = ChatService_1 = class ChatService {
         setInterval(() => this.cleanExpiredSessions(), 10 * 60 * 1000);
     }
     async sendMessage(dto) {
-        const { sessionId, message, provider = 'gigachat', model, clientId, clinicNetId } = dto;
+        const { sessionId, message, provider = 'gigachat', model, clientId, clinicNetId, misType, townId, districtId, encryptedPatient } = dto;
         const session = this.getOrCreateSession(sessionId, provider, model);
         if (clientId !== undefined)
             session.clientId = clientId;
         if (clinicNetId !== undefined)
             session.clinicNetId = clinicNetId;
+        if (townId !== undefined)
+            session.townId = townId;
+        if (districtId !== undefined)
+            session.districtId = districtId;
+        if (misType !== undefined && session.misType === undefined)
+            session.misType = misType;
+        if (encryptedPatient && !session.patient) {
+            try {
+                session.patient = decryptPatientData(encryptedPatient, this.config.get('PATIENT_DATA_PRIVATE_KEY', ''));
+            }
+            catch (err) {
+                this.logger.warn(`Failed to decrypt patient data for session ${sessionId}: ${String(err)}`);
+            }
+        }
         session.messages.push({ role: 'user', content: message });
         session.updatedAt = new Date();
         if (session.pendingConflict) {
             const pc = session.pendingConflict;
-            if (/замени|заменить|замените|заменяй/i.test(message)) {
+            const wantsReplace = /замени|заменить|замените|заменяй/i.test(message);
+            const wantsOtherTime = /другое время|другой|выберу|выбрать|перенесем|перенести|поменяем|поменять время/i.test(message);
+            if (wantsReplace) {
                 session.pendingConflict = undefined;
                 session.state = 'idle';
-                const rescheduleResult = await this.booking.rescheduleAppointment({
-                    oldId: pc.oldId,
-                    type: pc.oldType,
-                    doctorId: pc.newDoctorId,
-                    serviceId: pc.newServiceId,
-                    clinicId: pc.newClinicId,
-                    newStartTime: pc.newStartTime,
-                    patientId: session.clientId,
-                });
-                session.messages.push({ role: 'assistant', content: '', function_call: { name: 'reschedule_appointment', arguments: JSON.stringify({ oldId: pc.oldId, type: pc.oldType, newStartTime: pc.newStartTime }) } });
+                let rescheduleResult;
+                if (session.misType === 'medflex' && pc.oldUuid) {
+                    await this.booking.executeTool('cancel_appointment', { uuid: pc.oldUuid }, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
+                    rescheduleResult = await this.booking.executeTool('book_appointment', pc.pendingBookingArgs ?? { doctorId: pc.newDoctorId, clinicId: pc.newClinicId, startTime: pc.newStartTime }, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
+                }
+                else if (session.misType && session.misType !== 'medflex') {
+                    await this.booking.executeTool('cancel_appointment', { id: pc.oldId, type: pc.oldType }, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
+                    rescheduleResult = await this.booking.executeTool('book_appointment', { doctorId: pc.newDoctorId, serviceId: pc.newServiceId, clinicId: pc.newClinicId, startTime: pc.newStartTime }, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
+                }
+                else {
+                    rescheduleResult = await this.booking.rescheduleAppointment({
+                        oldId: pc.oldId,
+                        type: pc.oldType,
+                        doctorId: pc.newDoctorId,
+                        serviceId: pc.newServiceId,
+                        clinicId: pc.newClinicId,
+                        newStartTime: pc.newStartTime,
+                        patientId: session.clientId,
+                    });
+                }
+                session.messages.push({ role: 'assistant', content: '', function_call: { name: 'reschedule_appointment', arguments: JSON.stringify({ oldId: pc.oldUuid ?? pc.oldId, newStartTime: pc.newStartTime }) } });
                 session.messages.push({ role: 'function', name: 'reschedule_appointment', content: JSON.stringify(rescheduleResult) });
+            }
+            else if (wantsOtherTime || (session.misType === 'medflex' && /оставить|оставь|другой|нет/i.test(message))) {
+                session.pendingConflict = undefined;
+                session.state = 'idle';
             }
             else if (/оставить|оставь|оставьте|оставим|оставляем|обе|оба|не замен/i.test(message)) {
                 session.pendingConflict = undefined;
@@ -89,26 +121,36 @@ let ChatService = ChatService_1 = class ChatService {
                     serviceId: pc.newServiceId,
                     clinicId: pc.newClinicId,
                     startTime: pc.newStartTime,
-                }, sessionId, session.clientId);
+                }, sessionId, session.clientId, session.misType ?? undefined, session.clinicNetId, session.townId, session.districtId, session.patient);
                 session.messages.push({ role: 'assistant', content: '', function_call: { name: 'book_appointment', arguments: JSON.stringify({ doctorId: pc.newDoctorId, clinicId: pc.newClinicId, startTime: pc.newStartTime }) } });
                 session.messages.push({ role: 'function', name: 'book_appointment', content: JSON.stringify(bookResult) });
             }
         }
-        const tools = this.booking.getTools();
+        const tools = this.booking.getTools(session.misType ?? undefined);
         const today = new Date();
         const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
         let systemWithDate = `${this.systemPrompt}\nСегодняшняя дата: ${todayStr}. При указании дат всегда используй формат YYYY-MM-DD с текущим годом.`;
         if (session.state === 'conflict_resolution' && session.pendingConflict) {
             const pc = session.pendingConflict;
-            systemWithDate +=
-                `\n\nТЕКУЩЕЕ СОСТОЯНИЕ: режим разрешения конфликта.` +
-                    ` Существующая запись: ${pc.oldId} (тип: ${pc.oldType}), новое время: ${pc.newStartTime}.` +
-                    ` Ожидается ответ пациента: "оставить обе записи" или "заменить старую".` +
-                    ` НЕ предлагай новых записей. НЕ вызывай инструменты.`;
+            if (pc.oldUuid) {
+                const desc = pc.existingDescription ?? pc.oldUuid;
+                systemWithDate +=
+                    `\n\nТЕКУЩЕЕ СОСТОЯНИЕ: режим разрешения конфликта MedFlex.` +
+                        ` Существующая запись: ${desc}.` +
+                        ` Ожидается ответ пациента: "заменить" (отменить старую и создать новую) или "выбрать другое время".` +
+                        ` НЕ вызывай инструменты.`;
+            }
+            else {
+                systemWithDate +=
+                    `\n\nТЕКУЩЕЕ СОСТОЯНИЕ: режим разрешения конфликта.` +
+                        ` Существующая запись: ${pc.oldId} (тип: ${pc.oldType}), новое время: ${pc.newStartTime}.` +
+                        ` Ожидается ответ пациента: "оставить обе записи" или "заменить старую".` +
+                        ` НЕ предлагай новых записей. НЕ вызывай инструменты.`;
+            }
         }
         let reply;
         try {
-            if (isSymptomMessage(message)) {
+            if (isSymptomMessage(message) && session.misType !== 'medflex') {
                 reply = await this.handleSymptomMessage(message, systemWithDate, session);
             }
             else {
@@ -129,7 +171,7 @@ let ChatService = ChatService_1 = class ChatService {
         return { sessionId, reply, history: [...session.messages] };
     }
     async handleSymptomMessage(message, systemPrompt, session) {
-        const symptomSystemPrompt = `Ты — медицинский ассистент клиники «XXI Век». ` +
+        const symptomSystemPrompt = `Ты — медицинский ассистент клиники. ` +
             `Пациент описал жалобу. Ответь СТРОГО по шаблону (2–3 предложения): ` +
             `сначала кратко объясни возможные причины симптома (без постановки диагноза), ` +
             `затем предложи записаться к одному или двум специалистам из этого списка: ${CLINIC_SPECIALISTS}. ` +
@@ -211,7 +253,7 @@ let ChatService = ChatService_1 = class ChatService {
                     session.messages.push(validationMsg);
                     continue;
                 }
-                if (result.toolName === 'book_appointment' && session.clientId && result.toolArgs.startTime) {
+                if (result.toolName === 'book_appointment' && !session.misType && session.clientId && result.toolArgs.startTime) {
                     const conflict = await this.booking.checkPatientTimeConflict(session.clientId, result.toolArgs.startTime);
                     if (conflict) {
                         session.pendingConflict = {
@@ -247,7 +289,40 @@ let ChatService = ChatService_1 = class ChatService {
                     }
                 }
             }
-            const toolResult = await this.booking.executeTool(result.toolName, result.toolArgs, sessionId, session.clientId);
+            const toolResult = await this.booking.executeTool(result.toolName, result.toolArgs, sessionId, session.clientId, session.misType ?? undefined, session.clinicNetId, session.townId, session.districtId, session.patient);
+            if (toolResult?.conflict === true && result.toolName === 'book_appointment') {
+                const cr = toolResult;
+                session.pendingConflict = {
+                    oldId: 0,
+                    oldType: 'doctor',
+                    oldUuid: cr.existingAppointment?.uuid,
+                    existingDescription: cr.existingAppointment?.description,
+                    newDoctorId: result.toolArgs.doctorId,
+                    newServiceId: result.toolArgs.serviceId,
+                    newClinicId: result.toolArgs.clinicId,
+                    newStartTime: result.toolArgs.startTime,
+                    pendingBookingArgs: cr.pendingBookingArgs,
+                };
+                session.state = 'conflict_resolution';
+                const conflictFuncMsg = {
+                    role: 'function',
+                    name: result.toolName,
+                    content: JSON.stringify(toolResult),
+                };
+                context.push(conflictFuncMsg);
+                session.messages.push(conflictFuncMsg);
+                if (context[0]?.role === 'system') {
+                    context[0].content +=
+                        '\n\nТЕКУЩЕЕ СОСТОЯНИЕ: обнаружен конфликт записи MedFlex.' +
+                            ' Объясни пациенту, что в это время уже есть запись (см. поле existingAppointment).' +
+                            ' Предложи два варианта: "заменить" (отменить старую и создать новую) или "выбрать другое время".' +
+                            ' НЕ вызывай инструменты.';
+                }
+                const conflictTextResult = session.provider === 'gigachat'
+                    ? await this.gigaChat.complete(context, tools, session.model, true)
+                    : await this.openAi.complete(context, tools, session.model);
+                return conflictTextResult.type === 'text' ? conflictTextResult.content : 'Уточните ваш выбор.';
+            }
             const funcMsg = {
                 role: 'function',
                 name: result.toolName,
@@ -299,4 +374,19 @@ exports.ChatService = ChatService = ChatService_1 = __decorate([
         gigachat_service_1.GigaChatService,
         booking_service_1.BookingService])
 ], ChatService);
+function decryptPatientData(encrypted, privateKeyPem) {
+    if (!privateKeyPem)
+        throw new Error('PATIENT_DATA_PRIVATE_KEY не задан');
+    privateKeyPem = privateKeyPem.replace(/\\n/g, '\n');
+    const encryptedAesKey = Buffer.from(encrypted.k, 'base64');
+    const aesKey = crypto.privateDecrypt({ key: privateKeyPem, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' }, encryptedAesKey);
+    const iv = Buffer.from(encrypted.iv, 'base64');
+    const encryptedWithTag = Buffer.from(encrypted.d, 'base64');
+    const authTag = encryptedWithTag.subarray(encryptedWithTag.length - 16);
+    const ciphertext = encryptedWithTag.subarray(0, encryptedWithTag.length - 16);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', aesKey, iv);
+    decipher.setAuthTag(authTag);
+    const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    return JSON.parse(decrypted.toString('utf8'));
+}
 //# sourceMappingURL=chat.service.js.map

@@ -10,38 +10,20 @@ exports.BookingModule = void 0;
 const common_1 = require("@nestjs/common");
 const typeorm_1 = require("@nestjs/typeorm");
 const booking_service_1 = require("./booking.service");
-const clinic_entity_1 = require("../database/entities/clinic.entity");
-const doctor_entity_1 = require("../database/entities/doctor.entity");
-const doctor_location_entity_1 = require("../database/entities/doctor-location.entity");
-const doctor_working_hours_entity_1 = require("../database/entities/doctor-working-hours.entity");
-const doctor_exception_entity_1 = require("../database/entities/doctor-exception.entity");
-const service_working_hours_entity_1 = require("../database/entities/service-working-hours.entity");
-const service_exception_entity_1 = require("../database/entities/service-exception.entity");
-const service_appointment_entity_1 = require("../database/entities/service-appointment.entity");
-const service_entity_1 = require("../database/entities/service.entity");
-const service_by_clinic_entity_1 = require("../database/entities/service-by-clinic.entity");
-const service_schedule_entity_1 = require("../database/entities/service-schedule.entity");
-const appointment_entity_1 = require("../database/entities/appointment.entity");
+const clinic_net_entity_1 = require("../database/entities/clinic-net.entity");
+const local_db_module_1 = require("../integrations/local/local-db.module");
+const infoclinica_module_1 = require("../integrations/infoclinica/infoclinica.module");
+const medflex_module_1 = require("../integrations/medflex/medflex.module");
 let BookingModule = class BookingModule {
 };
 exports.BookingModule = BookingModule;
 exports.BookingModule = BookingModule = __decorate([
     (0, common_1.Module)({
         imports: [
-            typeorm_1.TypeOrmModule.forFeature([
-                clinic_entity_1.Clinic,
-                doctor_entity_1.Doctor,
-                doctor_location_entity_1.DoctorLocation,
-                doctor_working_hours_entity_1.DoctorWorkingHours,
-                doctor_exception_entity_1.DoctorException,
-                service_entity_1.Service,
-                service_by_clinic_entity_1.ServiceByClinic,
-                service_schedule_entity_1.ServiceSchedule,
-                appointment_entity_1.Appointment,
-                service_working_hours_entity_1.ServiceWorkingHours,
-                service_exception_entity_1.ServiceException,
-                service_appointment_entity_1.ServiceAppointment,
-            ]),
+            typeorm_1.TypeOrmModule.forFeature([clinic_net_entity_1.ClinicNet]),
+            local_db_module_1.LocalDbModule,
+            infoclinica_module_1.InfclinicaModule,
+            medflex_module_1.MedflexModule,
         ],
         providers: [booking_service_1.BookingService],
         exports: [booking_service_1.BookingService],

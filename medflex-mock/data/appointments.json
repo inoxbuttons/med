@@ -1,0 +1,21 @@
+[
+  {
+    "doctor_id": 1001,
+    "lpu_id": 101,
+    "speciality_id": 1,
+    "dt_start": "2026-04-27 09:00",
+    "dt_end": "2026-04-27 09:30",
+    "price": 1500,
+    "client": {
+      "first_name": "Тест",
+      "last_name": "Пациент",
+      "second_name": "",
+      "mobile_phone": "79001234567",
+      "birthday": "1990-01-01"
+    },
+    "uuid": "8cc27810-e791-4663-8e5b-4bff0b287089",
+    "id": 1,
+    "canceled": false,
+    "created_at": "2026-04-24T14:23:59.984Z"
+  }
+]

@@ -4,6 +4,8 @@ export declare class ClinicNet {
     name: string;
     description: string;
     website: string;
+    mis: string | null;
+    medflexKey: string | null;
     clinics: Clinic[];
     createdAt: Date;
     updatedAt: Date;

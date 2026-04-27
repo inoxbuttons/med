@@ -32,6 +32,14 @@ __decorate([
     __metadata("design:type", String)
 ], ClinicNet.prototype, "website", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ length: 50, nullable: true }),
+    __metadata("design:type", String)
+], ClinicNet.prototype, "mis", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: 'medflex_key', length: 255, nullable: true }),
+    __metadata("design:type", String)
+], ClinicNet.prototype, "medflexKey", void 0);
+__decorate([
     (0, typeorm_1.OneToMany)(() => clinic_entity_1.Clinic, (clinic) => clinic.clinicNet),
     __metadata("design:type", Array)
 ], ClinicNet.prototype, "clinics", void 0);

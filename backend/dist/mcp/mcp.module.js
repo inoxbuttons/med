@@ -11,13 +11,13 @@ const common_1 = require("@nestjs/common");
 const mcp_service_1 = require("./mcp.service");
 const mcp_controller_1 = require("./mcp.controller");
 const llm_module_1 = require("../llm/llm.module");
-const booking_module_1 = require("../booking/booking.module");
+const local_db_module_1 = require("../integrations/local/local-db.module");
 let McpModule = class McpModule {
 };
 exports.McpModule = McpModule;
 exports.McpModule = McpModule = __decorate([
     (0, common_1.Module)({
-        imports: [llm_module_1.LlmModule, booking_module_1.BookingModule],
+        imports: [llm_module_1.LlmModule, local_db_module_1.LocalDbModule],
         providers: [mcp_service_1.McpService],
         controllers: [mcp_controller_1.McpController],
         exports: [mcp_service_1.McpService],

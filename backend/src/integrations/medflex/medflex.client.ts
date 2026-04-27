@@ -16,12 +16,16 @@ import {
   MfAppointmentHistory,
 } from './medflex.types';
 
-/** Базовый URL API MedFlex. Эндпоинты без версионного префикса (/v1/, /v2/). */
-const BASE_V1 = 'https://api.medflex.ru';
-const BASE_V2 = 'https://api.medflex.ru';
-
 export class MedflexClient {
-  constructor(private readonly apiKey: string) {}
+  private readonly baseV1: string;
+  private readonly baseV2: string;
+
+  constructor(private readonly apiKey: string) {
+    // Read at construction time so ConfigModule has already loaded .env
+    const base = process.env.MEDFLEX_BASE_URL ?? 'https://api.medflex.ru';
+    this.baseV1 = base;
+    this.baseV2 = base;
+  }
 
   // ── Внутренние helpers ────────────────────────────────────────────────────
 
@@ -78,7 +82,7 @@ export class MedflexClient {
 
   /** Все специальности (v1). Обычно 100-300 записей. */
   async getSpecialities(): Promise<MfSpeciality[]> {
-    return this.getAllPages<MfSpeciality>(BASE_V1, '/models/speciality/', {});
+    return this.getAllPages<MfSpeciality>(this.baseV1, '/models/speciality/', {});
   }
 
   /**
@@ -94,7 +98,7 @@ export class MedflexClient {
     size?: number;
     page?: number;
   }): Promise<MfPage<MfLpu>> {
-    return this.get<MfPage<MfLpu>>(BASE_V1, '/models/lpu/', {
+    return this.get<MfPage<MfLpu>>(this.baseV1, '/models/lpu/', {
       lpu_group_id: params.lpuGroupId,
       speciality_ids: params.specialityIds,
       town_id: params.townId,
@@ -105,7 +109,7 @@ export class MedflexClient {
 
   /** Все клиники группы (все страницы). */
   async getAllLpus(lpuGroupId: number, townId?: number): Promise<MfLpu[]> {
-    return this.getAllPages<MfLpu>(BASE_V1, '/models/lpu/', {
+    return this.getAllPages<MfLpu>(this.baseV1, '/models/lpu/', {
       lpu_group_id: lpuGroupId,
       town_id: townId,
     });
@@ -122,7 +126,7 @@ export class MedflexClient {
     page?: number;
     size?: number;
   }): Promise<MfPage<MfDoctor>> {
-    return this.get<MfPage<MfDoctor>>(BASE_V1, '/models/doctor/', {
+    return this.get<MfPage<MfDoctor>>(this.baseV1, '/models/doctor/', {
       lpu_ids: params.lpuIds,
       speciality_ids: params.specialityIds,
       doctor_ids: params.doctorIds,
@@ -146,7 +150,7 @@ export class MedflexClient {
     days?: number;
     page?: number;
   }): Promise<MfPage<MfLpuSchedule>> {
-    return this.get<MfPage<MfLpuSchedule>>(BASE_V1, '/schedule/lpu/', {
+    return this.get<MfPage<MfLpuSchedule>>(this.baseV1, '/schedule/lpu/', {
       lpu_ids: params.lpuIds,
       date_start: params.dateStart,
       days: params.days ?? 14,
@@ -169,7 +173,7 @@ export class MedflexClient {
     days?: number;
     page?: number;
   }): Promise<MfPage<MfLpuSchedule>> {
-    return this.get<MfPage<MfLpuSchedule>>(BASE_V2, '/schedule/', {
+    return this.get<MfPage<MfLpuSchedule>>(this.baseV2, '/schedule/', {
       town_id: params.townId,
       lpu_ids: params.lpuIds,
       speciality_ids: params.specialityIds,
@@ -184,30 +188,34 @@ export class MedflexClient {
   // ── Запись ────────────────────────────────────────────────────────────────
 
   async createAppointment(request: MfBookingRequest): Promise<MfBookingResponse> {
-    return this.post<MfBookingResponse>(BASE_V1, '/direct_appointment/doctor/execute/', request);
+    return this.post<MfBookingResponse>(this.baseV1, '/direct_appointment/doctor/execute/', request);
   }
 
   async cancelAppointment(uuid: string): Promise<void> {
-    await this.post<void>(BASE_V1, '/direct_appointment/doctor/cancel/', { uuid });
+    await this.post<void>(this.baseV1, '/direct_appointment/doctor/cancel/', { uuid });
   }
 
   async getAppointmentHistory(params: {
     mobilePhone?: string;
     lpuId?: number;
+    doctorId?: number;
     dateStart?: string;
     dateEnd?: string;
     uuid?: string;
+    includeCanceled?: boolean;
     page?: number;
     size?: number;
   }): Promise<MfPage<MfAppointmentHistory>> {
-    return this.get<MfPage<MfAppointmentHistory>>(BASE_V1, '/direct_appointment/history/', {
+    return this.get<MfPage<MfAppointmentHistory>>(this.baseV1, '/direct_appointment/history/', {
       mobile_phone: params.mobilePhone,
       lpu_id: params.lpuId,
+      doctor_id: params.doctorId,
       date_start: params.dateStart,
       date_end: params.dateEnd,
       uuid: params.uuid,
+      include_canceled: params.includeCanceled,
       page: params.page ?? 1,
-      size: params.size ?? 50,
+      size: params.size ?? 200,
     });
   }
 }
