@@ -17,5 +17,24 @@
     "id": 1,
     "canceled": false,
     "created_at": "2026-04-24T14:23:59.984Z"
+  },
+  {
+    "doctor_id": 1004,
+    "lpu_id": 101,
+    "speciality_id": 1,
+    "dt_start": "2026-04-28T14:00:00",
+    "dt_end": "2026-04-28T14:30:00",
+    "price": 1500,
+    "client": {
+      "first_name": "Иван",
+      "last_name": "Иванов",
+      "second_name": "Иванович",
+      "mobile_phone": "79001234567",
+      "birthday": "2026-04-27"
+    },
+    "uuid": "fbc2e1cc-48ee-497a-a2d1-cdfd3455cc48",
+    "id": 2,
+    "canceled": false,
+    "created_at": "2026-04-27T11:20:24.919Z"
   }
 ]

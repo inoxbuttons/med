@@ -8,14 +8,20 @@
  *   ></script>
  *
  * Параметры (data-* на теге <script>):
- *   data-clinic-net-id   — ID сети клиник (lpu_group_id в MedFlex)
- *   data-mis-type        — тип МИС: 'medflex', 'infoclinica', или пусто для локальной БД
- *   data-chat-url        — URL chat.html (по умолчанию: рядом со скриптом)
- *   data-title           — заголовок попапа (по умолчанию: 'Чат-ассистент')
- *   data-button-text     — текст кнопки (по умолчанию: 'Записаться онлайн')
- *   data-color           — основной цвет HEX (по умолчанию: #2493f9)
- *   data-position        — позиция кнопки: 'bottom-right' | 'bottom-left' (по умолчанию: 'bottom-right')
- *   data-auto-button     — 'false' чтобы скрыть плавающую кнопку (управление только через API)
+ *   data-clinic-net-id       — ID сети клиник (lpu_group_id в MedFlex)
+ *   data-mis-type            — тип МИС: 'medflex', 'infoclinica', или пусто для локальной БД
+ *   data-chat-url            — URL chat.html (по умолчанию: рядом со скриптом)
+ *   data-title               — заголовок попапа (по умолчанию: 'Чат-ассистент')
+ *   data-button-text         — текст кнопки (по умолчанию: 'Записаться онлайн')
+ *   data-color               — основной цвет HEX (по умолчанию: #2493f9)
+ *   data-position            — позиция кнопки: 'bottom-right' | 'bottom-left' (по умолчанию: 'bottom-right')
+ *   data-auto-button         — 'false' чтобы скрыть плавающую кнопку (управление только через API)
+ *
+ *   data-round-button        — 'true' чтобы показать круглую FAB-кнопку
+ *   data-round-button-text   — надпись под кружком (по умолчанию: 'Запись с ассистентом')
+ *   data-round-button-color  — цвет кружка (по умолчанию: data-color)
+ *   data-round-button-position — позиция: 'bottom-right'|'bottom-left'|'top-right'|'top-left' (по умолчанию: 'bottom-right')
+ *   data-round-button-style  — произвольный CSS для контейнера кнопки (например: 'bottom:40px;right:40px;')
  *
  * Публичный API (window.MedChatWidget):
  *   .open()              — открыть попап
@@ -47,14 +53,20 @@
   // ── Конфигурация ────────────────────────────────────────────────────────────
 
   var _cfg = {
-    clinicNetId : _attr('clinic-net-id') || null,
-    misType     : _attr('mis-type')      || null,
-    chatUrl     : _attr('chat-url')      || (_base + 'chat.html'),
-    title       : _attr('title',        'Чат-ассистент'),
-    buttonText  : _attr('button-text',  'Записаться онлайн'),
-    color       : _attr('color',        '#2493f9'),
-    position    : _attr('position',     'bottom-right'),
-    autoButton  : _attr('auto-button',  'true') !== 'false',
+    clinicNetId       : _attr('clinic-net-id') || null,
+    misType           : _attr('mis-type')      || null,
+    chatUrl           : _attr('chat-url')      || (_base + 'chat.html'),
+    title             : _attr('title',        'Чат-ассистент'),
+    buttonText        : _attr('button-text',  'Записаться онлайн'),
+    color             : _attr('color',        '#2493f9'),
+    position          : _attr('position',     'bottom-right'),
+    autoButton        : _attr('auto-button',  'true') !== 'false',
+    // Круглая FAB-кнопка
+    roundButton       : _attr('round-button', 'false') !== 'false',
+    roundButtonText   : _attr('round-button-text',     'Запись'),
+    roundButtonColor  : _attr('round-button-color')    || null,  // fallback to color
+    roundButtonPos    : _attr('round-button-position', 'bottom-right'),
+    roundButtonStyle  : _attr('round-button-style')    || '',
   };
 
   // ── Состояние ───────────────────────────────────────────────────────────────
@@ -140,8 +152,19 @@
 
   // ── CSS ──────────────────────────────────────────────────────────────────────
 
-  var _COLOR = _cfg.color;
-  var _POS_R = _cfg.position !== 'bottom-left';
+  var _COLOR      = _cfg.color;
+  var _POS_R      = _cfg.position !== 'bottom-left';
+  var _RB_COLOR   = _cfg.roundButtonColor || _COLOR;
+  var _RB_POS     = _cfg.roundButtonPos;
+
+  function _rbPosCSS() {
+    var css = 'position:fixed;z-index:99998;';
+    if (_RB_POS === 'bottom-left')  { css += 'bottom:24px;left:24px;'; }
+    else if (_RB_POS === 'top-right')   { css += 'top:24px;right:24px;'; }
+    else if (_RB_POS === 'top-left')    { css += 'top:24px;left:24px;'; }
+    else                            { css += 'bottom:24px;right:24px;'; } // bottom-right default
+    return css;
+  }
 
   var _css = [
     ':root{--mdc-color:' + _COLOR + ';--mdc-color-dark:color-mix(in srgb,var(--mdc-color) 80%,#000)}',
@@ -210,6 +233,33 @@
     '  flex:1;display:flex;align-items:center;justify-content:center;',
     '  color:#999;font-size:14px;font-family:inherit;',
     '}',
+
+    /* Round FAB button */
+    '.mdc-round-btn{',
+    '  display:flex;flex-direction:column;align-items:center;',
+    '  cursor:pointer;border:none;background:none;padding:0;',
+    '  font-family:inherit;text-decoration:none;',
+    '}',
+    '@keyframes mdcRbPulse{',
+    '  0%{box-shadow:0 6px 20px rgba(0,0,0,.22),0 0 0 0 ' + _RB_COLOR + '66;}',
+    '  70%{box-shadow:0 6px 20px rgba(0,0,0,.22),0 0 0 16px ' + _RB_COLOR + '00;}',
+    '  100%{box-shadow:0 6px 20px rgba(0,0,0,.22),0 0 0 0 ' + _RB_COLOR + '00;}',
+    '}',
+    '.mdc-round-btn__circle{',
+    '  width:96px;height:96px;border-radius:50%;',
+    '  background:' + _RB_COLOR + ';color:#fff;',
+    '  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;',
+    '  box-shadow:0 6px 20px rgba(0,0,0,.22),0 0 0 0 ' + _RB_COLOR + '66;',
+    '  animation:mdcRbPulse 2.2s ease-out infinite;',
+    '  flex-shrink:0;padding:10px;box-sizing:border-box;',
+    '}',
+    '.mdc-round-btn:hover .mdc-round-btn__circle{animation:none;transform:translateY(-3px);box-shadow:0 10px 28px rgba(0,0,0,.28);}',
+    '.mdc-round-btn:active .mdc-round-btn__circle{animation:none;transform:none;}',
+    '.mdc-round-btn__label{',
+    '  font-size:15px;font-weight:700;color:#fff;',
+    '  text-align:center;line-height:1.2;',
+    '  max-width:80px;word-break:break-word;',
+    '}',
   ].join('');
 
   // ── HTML ─────────────────────────────────────────────────────────────────────
@@ -218,6 +268,27 @@
     var svg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">'
             + '<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>';
 
+    // Robot-in-bubble icon (matches icon.png in project root)
+    var svgLg = '<svg width="38" height="42" viewBox="0 0 48 52" fill="none" xmlns="http://www.w3.org/2000/svg">'
+              // Antenna ball + stem
+              + '<circle cx="24" cy="3" r="2.5" fill="white"/>'
+              + '<line x1="24" y1="5.5" x2="24" y2="11" stroke="white" stroke-width="2" stroke-linecap="round"/>'
+              // Speech bubble outline
+              + '<path d="M16 11 L32 11 Q43 11 43 22 L43 34 Q43 43 32 43 L24 43 L8 52 L16 43 Q5 43 5 34 L5 22 Q5 11 16 11 Z"'
+              + ' stroke="white" stroke-width="2.2" stroke-linejoin="round" fill="none"/>'
+              // Tail fill
+              + '<path d="M24 43 L8 52 L16 43 Z" fill="white"/>'
+              // Ear nubs
+              + '<rect x="2" y="24" width="3" height="8" rx="1.5" stroke="white" stroke-width="1.8" fill="none"/>'
+              + '<rect x="43" y="24" width="3" height="8" rx="1.5" stroke="white" stroke-width="1.8" fill="none"/>'
+              // Eyes (goggle style)
+              + '<circle cx="17" cy="26" r="4.5" stroke="white" stroke-width="2" fill="none"/>'
+              + '<circle cx="31" cy="26" r="4.5" stroke="white" stroke-width="2" fill="none"/>'
+              + '<line x1="21.5" y1="26" x2="26.5" y2="26" stroke="white" stroke-width="2"/>'
+              // Smile
+              + '<path d="M17 34 Q24 41 31 34" stroke="white" stroke-width="2" stroke-linecap="round" fill="none"/>'
+              + '</svg>';
+
     var closeSvg = '×';
 
     var html = '';
@@ -225,6 +296,17 @@
     if (_cfg.autoButton) {
       html += '<button class="mdc-trigger" id="mdcTrigger" aria-label="' + _cfg.buttonText + '">'
             + svg + '<span>' + _cfg.buttonText + '</span>'
+            + '</button>';
+    }
+
+    if (_cfg.roundButton) {
+      // Позиционирование: inline style на контейнере (можно переопределить через roundButtonStyle)
+      var rbStyle = _rbPosCSS() + (_cfg.roundButtonStyle ? _cfg.roundButtonStyle : '');
+      html += '<button class="mdc-round-btn" id="mdcRoundBtn" style="' + rbStyle + '" aria-label="' + _cfg.roundButtonText + '">'
+            + '<span class="mdc-round-btn__circle">'
+            + svgLg
+            + '<span class="mdc-round-btn__label">' + _cfg.roundButtonText + '</span>'
+            + '</span>'
             + '</button>';
     }
 
@@ -295,9 +377,13 @@
   function _init() {
     _inject();
 
-    // Плавающая кнопка
+    // Плавающая кнопка (pill)
     var trigger = d.getElementById('mdcTrigger');
     if (trigger) trigger.addEventListener('click', _open);
+
+    // Круглая FAB-кнопка
+    var roundBtn = d.getElementById('mdcRoundBtn');
+    if (roundBtn) roundBtn.addEventListener('click', _open);
 
     // Кнопка закрытия
     var closeBtn = d.getElementById('mdcClose');

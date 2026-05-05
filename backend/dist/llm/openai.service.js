@@ -46,6 +46,13 @@ let OpenAiService = OpenAiService_1 = class OpenAiService {
         }
         const response = await this.client.chat.completions.create(params);
         const choice = response.choices[0];
+        const usage = response.usage
+            ? {
+                promptTokens: response.usage.prompt_tokens,
+                completionTokens: response.usage.completion_tokens,
+                totalTokens: response.usage.total_tokens,
+            }
+            : undefined;
         if (choice.finish_reason === 'tool_calls' && choice.message.tool_calls?.length) {
             const tc = choice.message.tool_calls[0].function;
             let args = {};
@@ -55,9 +62,9 @@ let OpenAiService = OpenAiService_1 = class OpenAiService {
             catch {
                 this.logger.warn(`Failed to parse tool args: ${tc.arguments}`);
             }
-            return { type: 'tool_call', toolName: tc.name, toolArgs: args };
+            return { type: 'tool_call', toolName: tc.name, toolArgs: args, usage };
         }
-        return { type: 'text', content: choice.message.content ?? '' };
+        return { type: 'text', content: choice.message.content ?? '', usage };
     }
 };
 exports.OpenAiService = OpenAiService;

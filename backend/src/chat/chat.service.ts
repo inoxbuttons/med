@@ -3,9 +3,13 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { OpenAiService } from '../llm/openai.service';
 import { GigaChatService } from '../llm/gigachat.service';
 import { BookingService } from '../booking/booking.service';
+import { TokenUsage } from '../database/entities/token-usage.entity';
+import { LlmUsage } from '../llm/llm.types';
 import {
   ChatMessage,
   EncryptedPatient,
@@ -58,6 +62,8 @@ export class ChatService implements OnModuleInit {
     private readonly openAi: OpenAiService,
     private readonly gigaChat: GigaChatService,
     private readonly booking: BookingService,
+    @InjectRepository(TokenUsage)
+    private readonly tokenUsageRepo: Repository<TokenUsage>,
   ) {
     const promptFile = path.resolve(__dirname, '../prompts/system-prompt.txt');
     const defaultPrompt = fs.readFileSync(promptFile, 'utf-8').trim();
@@ -185,7 +191,7 @@ export class ChatService implements OnModuleInit {
       // Symptom shortcut only for local DB / infoclinica — for MedFlex the tool loop
       // handles symptoms via find_doctors with real specialities from the API
       if (isSymptomMessage(message) && session.misType !== 'medflex') {
-        reply = await this.handleSymptomMessage(message, systemWithDate, session);
+        reply = await this.handleSymptomMessage(message, systemWithDate, session, sessionId);
       } else {
         const context: ChatMessage[] = [
           { role: 'system', content: systemWithDate },
@@ -210,6 +216,7 @@ export class ChatService implements OnModuleInit {
     message: string,
     systemPrompt: string,
     session: SessionData,
+    sessionId: string,
   ): Promise<string> {
     const symptomSystemPrompt =
       `Ты — медицинский ассистент клиники. ` +
@@ -229,6 +236,7 @@ export class ChatService implements OnModuleInit {
       ? await this.gigaChat.complete(context, [], session.model, true)
       : await this.openAi.complete(context, [], session.model);
 
+    this.saveUsage(result.usage, sessionId, session.clinicNetId, session.provider);
     return result.type === 'text' ? result.content : 'Пожалуйста, обратитесь к специалисту клиники.';
   }
 
@@ -244,6 +252,8 @@ export class ChatService implements OnModuleInit {
         session.provider === 'gigachat'
           ? await this.gigaChat.complete(context, tools, session.model, isLastIteration)
           : await this.openAi.complete(context, tools, session.model);
+
+      this.saveUsage(result.usage, sessionId, session.clinicNetId, session.provider);
 
       if (result.type === 'text') {
         return result.content;
@@ -360,6 +370,7 @@ export class ChatService implements OnModuleInit {
               session.provider === 'gigachat'
                 ? await this.gigaChat.complete(context, tools, session.model, true)
                 : await this.openAi.complete(context, tools, session.model);
+            this.saveUsage(textResult.usage, sessionId, session.clinicNetId, session.provider);
             return textResult.type === 'text' ? textResult.content : 'Уточните ваш выбор.';
           }
         }
@@ -403,6 +414,7 @@ export class ChatService implements OnModuleInit {
           session.provider === 'gigachat'
             ? await this.gigaChat.complete(context, tools, session.model, true)
             : await this.openAi.complete(context, tools, session.model);
+        this.saveUsage(conflictTextResult.usage, sessionId, session.clinicNetId, session.provider);
         return conflictTextResult.type === 'text' ? conflictTextResult.content : 'Уточните ваш выбор.';
       }
 
@@ -443,6 +455,19 @@ export class ChatService implements OnModuleInit {
       });
     }
     return this.sessions.get(sessionId)!;
+  }
+
+  /** Сохраняет использование токенов в БД (fire-and-forget, не блокирует ответ). */
+  private saveUsage(usage: LlmUsage | undefined, sessionId: string, clinicNetId: number | undefined, provider: string): void {
+    if (!usage) return;
+    this.tokenUsageRepo.save({
+      clinicNetId: clinicNetId ?? null,
+      sessionId,
+      provider,
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      totalTokens: usage.totalTokens,
+    }).catch((err) => this.logger.warn(`Failed to save token usage: ${String(err)}`));
   }
 
   private cleanExpiredSessions(): void {

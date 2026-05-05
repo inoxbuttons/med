@@ -40,7 +40,8 @@
       "Bash(pkill -f \"nest start\" 2>/dev/null; pkill -f \"node.*med-backend\" 2>/dev/null; lsof -ti :3000 | xargs kill -9 2>/dev/null; sleep 2; echo \"done\")",
       "Bash(open /Users/user/projects/med/site/index.html)",
       "Bash(npm run:*)",
-      "Bash(psql -U root -d med -c \"SELECT d.id, d.name FROM doctors d WHERE d.name ILIKE '%Нестерова%';\" 2>&1)"
+      "Bash(psql -U root -d med -c \"SELECT d.id, d.name FROM doctors d WHERE d.name ILIKE '%Нестерова%';\" 2>&1)",
+      "WebFetch(domain:docs.infoclinica.ru)"
     ]
   }
 }

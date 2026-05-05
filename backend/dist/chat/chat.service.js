@@ -8,6 +8,9 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
 var ChatService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ChatService = void 0;
@@ -16,9 +19,12 @@ const path = require("path");
 const crypto = require("crypto");
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
+const typeorm_1 = require("@nestjs/typeorm");
+const typeorm_2 = require("typeorm");
 const openai_service_1 = require("../llm/openai.service");
 const gigachat_service_1 = require("../llm/gigachat.service");
 const booking_service_1 = require("../booking/booking.service");
+const token_usage_entity_1 = require("../database/entities/token-usage.entity");
 const MAX_TOOL_ITERATIONS = 10;
 const SYMPTOM_PATTERNS = [
     /болит|болит|боль|болью|болезненн/i,
@@ -41,11 +47,12 @@ const CLINIC_SPECIALISTS = 'Терапевт, Невролог, Кардиоло
     'Аллерголог-иммунолог, Дерматовенеролог, Оториноларинголог, ' +
     'Онколог-маммолог, Нефролог, Проктолог, Врач УЗИ';
 let ChatService = ChatService_1 = class ChatService {
-    constructor(config, openAi, gigaChat, booking) {
+    constructor(config, openAi, gigaChat, booking, tokenUsageRepo) {
         this.config = config;
         this.openAi = openAi;
         this.gigaChat = gigaChat;
         this.booking = booking;
+        this.tokenUsageRepo = tokenUsageRepo;
         this.logger = new common_1.Logger(ChatService_1.name);
         this.sessions = new Map();
         this.SESSION_TTL_MS = 30 * 60 * 1000;
@@ -151,7 +158,7 @@ let ChatService = ChatService_1 = class ChatService {
         let reply;
         try {
             if (isSymptomMessage(message) && session.misType !== 'medflex') {
-                reply = await this.handleSymptomMessage(message, systemWithDate, session);
+                reply = await this.handleSymptomMessage(message, systemWithDate, session, sessionId);
             }
             else {
                 const context = [
@@ -170,7 +177,7 @@ let ChatService = ChatService_1 = class ChatService {
         this.logger.debug(`Session ${sessionId}: ${session.messages.length} messages`);
         return { sessionId, reply, history: [...session.messages] };
     }
-    async handleSymptomMessage(message, systemPrompt, session) {
+    async handleSymptomMessage(message, systemPrompt, session, sessionId) {
         const symptomSystemPrompt = `Ты — медицинский ассистент клиники. ` +
             `Пациент описал жалобу. Ответь СТРОГО по шаблону (2–3 предложения): ` +
             `сначала кратко объясни возможные причины симптома (без постановки диагноза), ` +
@@ -184,6 +191,7 @@ let ChatService = ChatService_1 = class ChatService {
         const result = session.provider === 'gigachat'
             ? await this.gigaChat.complete(context, [], session.model, true)
             : await this.openAi.complete(context, [], session.model);
+        this.saveUsage(result.usage, sessionId, session.clinicNetId, session.provider);
         return result.type === 'text' ? result.content : 'Пожалуйста, обратитесь к специалисту клиники.';
     }
     async runToolLoop(session, context, tools, sessionId) {
@@ -192,6 +200,7 @@ let ChatService = ChatService_1 = class ChatService {
             const result = session.provider === 'gigachat'
                 ? await this.gigaChat.complete(context, tools, session.model, isLastIteration)
                 : await this.openAi.complete(context, tools, session.model);
+            this.saveUsage(result.usage, sessionId, session.clinicNetId, session.provider);
             if (result.type === 'text') {
                 return result.content;
             }
@@ -285,6 +294,7 @@ let ChatService = ChatService_1 = class ChatService {
                         const textResult = session.provider === 'gigachat'
                             ? await this.gigaChat.complete(context, tools, session.model, true)
                             : await this.openAi.complete(context, tools, session.model);
+                        this.saveUsage(textResult.usage, sessionId, session.clinicNetId, session.provider);
                         return textResult.type === 'text' ? textResult.content : 'Уточните ваш выбор.';
                     }
                 }
@@ -321,6 +331,7 @@ let ChatService = ChatService_1 = class ChatService {
                 const conflictTextResult = session.provider === 'gigachat'
                     ? await this.gigaChat.complete(context, tools, session.model, true)
                     : await this.openAi.complete(context, tools, session.model);
+                this.saveUsage(conflictTextResult.usage, sessionId, session.clinicNetId, session.provider);
                 return conflictTextResult.type === 'text' ? conflictTextResult.content : 'Уточните ваш выбор.';
             }
             const funcMsg = {
@@ -352,6 +363,18 @@ let ChatService = ChatService_1 = class ChatService {
         }
         return this.sessions.get(sessionId);
     }
+    saveUsage(usage, sessionId, clinicNetId, provider) {
+        if (!usage)
+            return;
+        this.tokenUsageRepo.save({
+            clinicNetId: clinicNetId ?? null,
+            sessionId,
+            provider,
+            promptTokens: usage.promptTokens,
+            completionTokens: usage.completionTokens,
+            totalTokens: usage.totalTokens,
+        }).catch((err) => this.logger.warn(`Failed to save token usage: ${String(err)}`));
+    }
     cleanExpiredSessions() {
         const now = Date.now();
         let removed = 0;
@@ -369,10 +392,12 @@ let ChatService = ChatService_1 = class ChatService {
 exports.ChatService = ChatService;
 exports.ChatService = ChatService = ChatService_1 = __decorate([
     (0, common_1.Injectable)(),
+    __param(4, (0, typeorm_1.InjectRepository)(token_usage_entity_1.TokenUsage)),
     __metadata("design:paramtypes", [config_1.ConfigService,
         openai_service_1.OpenAiService,
         gigachat_service_1.GigaChatService,
-        booking_service_1.BookingService])
+        booking_service_1.BookingService,
+        typeorm_2.Repository])
 ], ChatService);
 function decryptPatientData(encrypted, privateKeyPem) {
     if (!privateKeyPem)

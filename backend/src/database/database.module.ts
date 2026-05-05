@@ -18,6 +18,7 @@ import { ServiceException } from './entities/service-exception.entity';
 import { ServiceAppointment } from './entities/service-appointment.entity';
 import { Person } from './entities/person.entity';
 import { ClinicPatient } from './entities/clinic-patient.entity';
+import { TokenUsage } from './entities/token-usage.entity';
 
 export const DB_ENTITIES = [
   ClinicNet,
@@ -37,6 +38,7 @@ export const DB_ENTITIES = [
   ServiceAppointment,
   Person,
   ClinicPatient,
+  TokenUsage,
 ];
 
 @Module({

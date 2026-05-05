@@ -27,6 +27,7 @@ const service_exception_entity_1 = require("./entities/service-exception.entity"
 const service_appointment_entity_1 = require("./entities/service-appointment.entity");
 const person_entity_1 = require("./entities/person.entity");
 const clinic_patient_entity_1 = require("./entities/clinic-patient.entity");
+const token_usage_entity_1 = require("./entities/token-usage.entity");
 exports.DB_ENTITIES = [
     clinic_net_entity_1.ClinicNet,
     clinic_entity_1.Clinic,
@@ -45,6 +46,7 @@ exports.DB_ENTITIES = [
     service_appointment_entity_1.ServiceAppointment,
     person_entity_1.Person,
     clinic_patient_entity_1.ClinicPatient,
+    token_usage_entity_1.TokenUsage,
 ];
 let DatabaseModule = class DatabaseModule {
 };

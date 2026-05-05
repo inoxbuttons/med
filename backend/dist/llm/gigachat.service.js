@@ -90,8 +90,15 @@ let GigaChatService = GigaChatService_1 = class GigaChatService {
             throw new Error(`GigaChat request failed: ${response.status} ${text}`);
         }
         const data = await response.json();
-        if (data.usage) {
-            this.logger.debug(`Tokens — prompt: ${data.usage.prompt_tokens}, completion: ${data.usage.completion_tokens}, total: ${data.usage.total_tokens}`);
+        const usage = data.usage
+            ? {
+                promptTokens: data.usage.prompt_tokens,
+                completionTokens: data.usage.completion_tokens,
+                totalTokens: data.usage.total_tokens,
+            }
+            : undefined;
+        if (usage) {
+            this.logger.debug(`Tokens — prompt: ${usage.promptTokens}, completion: ${usage.completionTokens}, total: ${usage.totalTokens}`);
         }
         const choice = data.choices[0];
         if (choice.finish_reason === 'function_call' && choice.message.function_call) {
@@ -109,9 +116,10 @@ let GigaChatService = GigaChatService_1 = class GigaChatService {
                 toolName: choice.message.function_call.name,
                 toolArgs: args,
                 functionsStateId: choice.message.functions_state_id,
+                usage,
             };
         }
-        return { type: 'text', content: choice.message.content };
+        return { type: 'text', content: choice.message.content, usage };
     }
 };
 exports.GigaChatService = GigaChatService;

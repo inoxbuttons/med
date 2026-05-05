@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { ChatMessage } from '../chat/chat.types';
-import { CompletionResult, LlmTool } from './llm.types';
+import { CompletionResult, LlmTool, LlmUsage } from './llm.types';
 
 @Injectable()
 export class OpenAiService {
@@ -50,6 +50,13 @@ export class OpenAiService {
 
     const response = await this.client.chat.completions.create(params);
     const choice = response.choices[0];
+    const usage: LlmUsage | undefined = response.usage
+      ? {
+          promptTokens: response.usage.prompt_tokens,
+          completionTokens: response.usage.completion_tokens,
+          totalTokens: response.usage.total_tokens,
+        }
+      : undefined;
 
     if (choice.finish_reason === 'tool_calls' && choice.message.tool_calls?.length) {
       const tc = choice.message.tool_calls[0].function;
@@ -59,9 +66,9 @@ export class OpenAiService {
       } catch {
         this.logger.warn(`Failed to parse tool args: ${tc.arguments}`);
       }
-      return { type: 'tool_call', toolName: tc.name, toolArgs: args };
+      return { type: 'tool_call', toolName: tc.name, toolArgs: args, usage };
     }
 
-    return { type: 'text', content: choice.message.content ?? '' };
+    return { type: 'text', content: choice.message.content ?? '', usage };
   }
 }

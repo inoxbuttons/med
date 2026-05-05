@@ -14,6 +14,7 @@ import { ServiceException } from './entities/service-exception.entity';
 import { ServiceAppointment } from './entities/service-appointment.entity';
 import { Person } from './entities/person.entity';
 import { ClinicPatient } from './entities/clinic-patient.entity';
-export declare const DB_ENTITIES: (typeof ClinicNet | typeof Clinic | typeof ServiceByClinic | typeof Service | typeof MedField | typeof Speciality | typeof Doctor | typeof DoctorLocation | typeof ServiceSchedule | typeof DoctorWorkingHours | typeof DoctorException | typeof ServiceWorkingHours | typeof ServiceException | typeof ServiceAppointment | typeof Person | typeof ClinicPatient)[];
+import { TokenUsage } from './entities/token-usage.entity';
+export declare const DB_ENTITIES: (typeof ClinicNet | typeof Clinic | typeof ServiceByClinic | typeof Service | typeof MedField | typeof Speciality | typeof Doctor | typeof DoctorLocation | typeof ServiceSchedule | typeof DoctorWorkingHours | typeof DoctorException | typeof ServiceWorkingHours | typeof ServiceException | typeof ServiceAppointment | typeof Person | typeof ClinicPatient | typeof TokenUsage)[];
 export declare class DatabaseModule {
 }
