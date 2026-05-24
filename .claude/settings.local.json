@@ -41,7 +41,8 @@
       "Bash(open /Users/user/projects/med/site/index.html)",
       "Bash(npm run:*)",
       "Bash(psql -U root -d med -c \"SELECT d.id, d.name FROM doctors d WHERE d.name ILIKE '%Нестерова%';\" 2>&1)",
-      "WebFetch(domain:docs.infoclinica.ru)"
+      "WebFetch(domain:docs.infoclinica.ru)",
+      "Bash(node *)"
     ]
   }
 }

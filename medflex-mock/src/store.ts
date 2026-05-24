@@ -75,14 +75,23 @@ export function cancelAppointment(uuid: string): boolean {
   return true;
 }
 
+/**
+ * Канонизирует dt_start к "YYYY-MM-DD HH:MM" — нужно для сравнения,
+ * т.к. в данных встречаются оба формата (T-сепаратор и пробел, с секундами и без).
+ */
+function normalizeDt(s: string): string {
+  return s.replace('T', ' ').slice(0, 16);
+}
+
 /** Проверяет, занят ли слот у данного врача в данной клинике. */
 export function isSlotBooked(doctorId: number, lpuId: number, dtStart: string): boolean {
+  const target = normalizeDt(dtStart);
   return load().some(
     (a) =>
       !a.canceled &&
       a.doctor_id === doctorId &&
       a.lpu_id === lpuId &&
-      a.dt_start === dtStart,
+      normalizeDt(a.dt_start) === target,
   );
 }
 

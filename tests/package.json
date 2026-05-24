@@ -1,0 +1,18 @@
+{
+  "name": "med-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Интеграционные тесты чата: проверка корректности дат на каждом шаге flow.",
+  "scripts": {
+    "test": "npm run test:cycle1 && npm run test:cycle2 && npm run test:cycle3",
+    "test:cycle1": "ts-node cycle1-booking.ts",
+    "test:cycle2": "ts-node cycle2-availability.ts",
+    "test:cycle3": "ts-node cycle3-multi-turn.ts",
+    "reset": "node -e \"require('fs').writeFileSync('../medflex-mock/data/appointments.json', '[]'); console.log('appointments.json reset to []')\""
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0"
+  }
+}

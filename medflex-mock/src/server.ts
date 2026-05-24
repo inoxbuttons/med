@@ -21,7 +21,7 @@
  */
 
 import express, { Request, Response, NextFunction } from 'express';
-import { SPECIALITIES, LPUS, DOCTORS } from './data';
+import { SPECIALITIES, LPUS, DOCTORS, SERVICE_CATEGORIES, SERVICES } from './data';
 import { buildSchedule } from './schedule';
 import {
   createAppointment,
@@ -134,6 +134,61 @@ app.get('/models/doctor/', (req: Request, res: Response) => {
   }));
 
   res.json(page(result, result.length));
+});
+
+// ── GET /services/categories/ ────────────────────────────────────────────────
+// Per spec: lpu_id обязателен. Возвращаем категории, у которых есть услуги в этой клинике.
+// Ответ: { count, num_pages, links, data: { lpu_id, categories: [{ id, name }] } }
+
+app.get('/services/categories/', (req: Request, res: Response) => {
+  const lpuId = req.query.lpu_id ? Number(req.query.lpu_id) : NaN;
+  if (!Number.isFinite(lpuId)) {
+    res.status(400).json({ detail: 'Параметр lpu_id обязателен.' });
+    return;
+  }
+
+  const categoryIds = new Set(SERVICES.filter((s) => s.lpu_id === lpuId).map((s) => s.category_id));
+  const categories = SERVICE_CATEGORIES.filter((c) => categoryIds.has(c.id));
+
+  res.json({
+    count: categories.length,
+    num_pages: 1,
+    links: { next: null, previous: null },
+    data: { lpu_id: lpuId, categories },
+  });
+});
+
+// ── GET /services/prices/ ────────────────────────────────────────────────────
+// Per spec: lpu_id обязателен; опционально doctor_id, category_ids (comma-separated).
+// Ответ: { count, num_pages, links, data: { lpu_id, services: [{ id:string, category_id, name, duration:int|null, price, doctor_ids }] } }
+
+app.get('/services/prices/', (req: Request, res: Response) => {
+  const lpuId = req.query.lpu_id ? Number(req.query.lpu_id) : NaN;
+  if (!Number.isFinite(lpuId)) {
+    res.status(400).json({ detail: 'Параметр lpu_id обязателен.' });
+    return;
+  }
+
+  const doctorId   = req.query.doctor_id ? Number(req.query.doctor_id) : undefined;
+  const categoryIds = parseIds(req.query.category_ids as string | undefined);
+
+  let services = SERVICES.filter((s) => s.lpu_id === lpuId);
+  if (doctorId !== undefined && Number.isFinite(doctorId)) {
+    services = services.filter((s) => s.doctor_ids.includes(doctorId));
+  }
+  if (categoryIds.length > 0) {
+    services = services.filter((s) => categoryIds.includes(s.category_id));
+  }
+
+  // Не выдаём mock-only поле lpu_id наружу (его в реальном API нет — оно в обёртке).
+  const responseServices = services.map(({ lpu_id: _lpuId, ...rest }) => rest);
+
+  res.json({
+    count: responseServices.length,
+    num_pages: 1,
+    links: { next: null, previous: null },
+    data: { lpu_id: lpuId, services: responseServices },
+  });
 });
 
 // ── GET /schedule/lpu/ ────────────────────────────────────────────────────────

@@ -8,13 +8,13 @@ exports.toSlotGroups = toSlotGroups;
 exports.toBookingResult = toBookingResult;
 exports.toPatientAppointmentItem = toPatientAppointmentItem;
 exports.toCancellableAppointment = toCancellableAppointment;
+const date_utils_1 = require("../shared/date-utils");
 function icDateToIso(icDate) {
     return `${icDate.slice(0, 4)}-${icDate.slice(4, 6)}-${icDate.slice(6, 8)}`;
 }
 function isoToIcDate(isoDate) {
     return isoDate.replace(/-/g, '');
 }
-const DAY_NAMES = ['', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
 function toClinics(filials) {
     return filials.map((f) => ({
         id: f.FILIAL,
@@ -55,7 +55,7 @@ function toSlotGroups(slots, filials, mode) {
             const filial = filials.find((f) => f.FILIAL === s.FILIAL);
             groups.set(key, {
                 date: isoDate,
-                dayName: DAY_NAMES[dbDay],
+                dateLabel: (0, date_utils_1.formatRuDateLabel)(isoDate),
                 clinicId: s.FILIAL,
                 clinicName: filial?.FNAME ?? `Филиал ${s.FILIAL}`,
                 times: [],

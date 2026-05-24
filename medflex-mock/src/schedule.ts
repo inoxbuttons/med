@@ -22,6 +22,15 @@ function toDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/**
+ * Канонизирует dt_start к "YYYY-MM-DD HH:MM" для сравнения слотов:
+ * принимает и "YYYY-MM-DD HH:MM[:SS]", и "YYYY-MM-DDTHH:MM[:SS]" — оба
+ * формата встречаются в appointments.json (старые тестовые vs реальные).
+ */
+function normalizeDt(s: string): string {
+  return s.replace('T', ' ').slice(0, 16);
+}
+
 /** Генерирует слоты на один день для данного расписания. */
 function generateDaySlots(
   dateStr: string,
@@ -62,9 +71,10 @@ export function buildSchedule(params: {
   const { lpuIds, dateStart, days } = params;
   const now = new Date();
 
-  // Собираем набор занятых ключей: "doctorId_lpuId_dt_start"
+  // Собираем набор занятых ключей: "doctorId_lpuId_<нормализованное dt_start>".
+  // Нормализация обязательна — в данных встречаются оба формата (T-сепаратор и пробел).
   const booked = new Set(
-    getActiveAppointments().map((a) => `${a.doctor_id}_${a.lpu_id}_${a.dt_start}`),
+    getActiveAppointments().map((a) => `${a.doctor_id}_${a.lpu_id}_${normalizeDt(a.dt_start)}`),
   );
 
   const result: LpuScheduleEntry[] = [];
@@ -105,8 +115,8 @@ export function buildSchedule(params: {
           const slotDate = new Date(slot.dt_start.replace(' ', 'T'));
           if (slotDate <= now) continue;
 
-          // Фильтруем занятые слоты
-          const key = `${doc.id}_${lpuId}_${slot.dt_start}`;
+          // Фильтруем занятые слоты (slot.dt_start уже в формате "YYYY-MM-DD HH:MM").
+          const key = `${doc.id}_${lpuId}_${normalizeDt(slot.dt_start)}`;
           if (booked.has(key)) continue;
 
           cells.push(slot);

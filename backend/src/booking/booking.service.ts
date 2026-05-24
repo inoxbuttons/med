@@ -44,8 +44,8 @@ export class BookingService {
 
   // ── Tool definitions ───────────────────────────────────────────────────────
 
-  getTools(misType?: string): LlmTool[] {
-    if (misType === 'medflex') return this.medflexService.getTools();
+  getTools(misType?: string, hasPatient?: boolean): LlmTool[] {
+    if (misType === 'medflex') return this.medflexService.getTools(hasPatient);
     // infoclinica и локальная БД используют один и тот же набор инструментов
     return this.localDbService.getTools();
   }

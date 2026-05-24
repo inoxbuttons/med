@@ -14,6 +14,10 @@ import {
   MfBookingRequest,
   MfBookingResponse,
   MfAppointmentHistory,
+  MfServiceCategory,
+  MfService,
+  MfServiceCategoriesResponse,
+  MfServicePricesResponse,
 } from './medflex.types';
 
 export class MedflexClient {
@@ -183,6 +187,40 @@ export class MedflexClient {
       days: params.days ?? 14,
       page: params.page ?? 1,
     });
+  }
+
+  // ── Услуги ────────────────────────────────────────────────────────────────
+  // Per spec MedFlex: /services/* эндпоинты per-lpu (lpu_id обязателен).
+  // Чтобы искать по сети — вызываем для каждого lpu в группе и мерджим.
+
+  /** Категории услуг конкретной клиники. */
+  async getServiceCategories(lpuId: number): Promise<MfServiceCategory[]> {
+    const resp = await this.get<MfServiceCategoriesResponse>(this.baseV1, '/services/categories/', {
+      lpu_id: lpuId,
+      size: 200,
+    });
+    return resp.data.categories;
+  }
+
+  /**
+   * Цены и услуги конкретной клиники, опционально фильтр по врачу/категориям.
+   * Возвращает массив услуг (не страницу — обёртка распакована).
+   */
+  async getServicePrices(params: {
+    lpuId: number;
+    doctorId?: number;
+    categoryIds?: string;
+    size?: number;
+    page?: number;
+  }): Promise<MfService[]> {
+    const resp = await this.get<MfServicePricesResponse>(this.baseV1, '/services/prices/', {
+      lpu_id: params.lpuId,
+      doctor_id: params.doctorId,
+      category_ids: params.categoryIds,
+      size: params.size ?? 500,
+      page: params.page ?? 1,
+    });
+    return resp.data.services;
   }
 
   // ── Запись ────────────────────────────────────────────────────────────────

@@ -101,6 +101,23 @@ class MedflexClient {
             page: params.page ?? 1,
         });
     }
+    async getServiceCategories(lpuId) {
+        const resp = await this.get(this.baseV1, '/services/categories/', {
+            lpu_id: lpuId,
+            size: 200,
+        });
+        return resp.data.categories;
+    }
+    async getServicePrices(params) {
+        const resp = await this.get(this.baseV1, '/services/prices/', {
+            lpu_id: params.lpuId,
+            doctor_id: params.doctorId,
+            category_ids: params.categoryIds,
+            size: params.size ?? 500,
+            page: params.page ?? 1,
+        });
+        return resp.data.services;
+    }
     async createAppointment(request) {
         return this.post(this.baseV1, '/direct_appointment/doctor/execute/', request);
     }

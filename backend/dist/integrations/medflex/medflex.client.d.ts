@@ -1,4 +1,4 @@
-import { MfPage, MfSpeciality, MfLpu, MfDoctor, MfLpuSchedule, MfBookingRequest, MfBookingResponse, MfAppointmentHistory } from './medflex.types';
+import { MfPage, MfSpeciality, MfLpu, MfDoctor, MfLpuSchedule, MfBookingRequest, MfBookingResponse, MfAppointmentHistory, MfServiceCategory, MfService } from './medflex.types';
 export declare class MedflexClient {
     private readonly apiKey;
     private readonly baseV1;
@@ -40,6 +40,14 @@ export declare class MedflexClient {
         days?: number;
         page?: number;
     }): Promise<MfPage<MfLpuSchedule>>;
+    getServiceCategories(lpuId: number): Promise<MfServiceCategory[]>;
+    getServicePrices(params: {
+        lpuId: number;
+        doctorId?: number;
+        categoryIds?: string;
+        size?: number;
+        page?: number;
+    }): Promise<MfService[]>;
     createAppointment(request: MfBookingRequest): Promise<MfBookingResponse>;
     cancelAppointment(uuid: string): Promise<void>;
     getAppointmentHistory(params: {

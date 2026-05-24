@@ -1,0 +1,10 @@
+export declare const DAY_NAMES: string[];
+export declare function dayName(dateStr: string): string;
+export declare function nextWeekdayDate(canonical: string, weekOffset?: number): string | null;
+export declare function formatRuDateLabel(dateStr: string): string;
+export declare function normalizeDayWord(s: string | undefined | null): string | null;
+export declare const DAY_WORD_REGEX: RegExp;
+export declare function findDayWord(text: string): string | null;
+export declare function toDateStr(date: Date): string;
+export declare function relativeDayLabel(dateStr: string): string | null;
+export declare function parseFlexibleDate(input: string | null | undefined): string | null;

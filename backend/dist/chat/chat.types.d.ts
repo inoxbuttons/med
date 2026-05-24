@@ -40,6 +40,10 @@ export interface SendMessageResponse {
     reply: string;
     history: ChatMessage[];
 }
+export interface PendingConfirmation {
+    toolName: 'book_appointment' | 'reschedule_appointment' | 'cancel_appointment';
+    toolArgs: Record<string, any>;
+}
 export interface PendingConflict {
     oldId: number;
     oldType: 'doctor' | 'service';
@@ -62,7 +66,15 @@ export interface SessionData {
     townId?: number;
     districtId?: number;
     patient?: PatientData;
+    recentBookings?: Array<{
+        uuid: string;
+        description: string;
+        startTime: string;
+    }>;
     pendingConflict?: PendingConflict;
+    pendingConfirmation?: PendingConfirmation;
+    completedBookingNotes?: string[];
+    foldedNotesCount?: number;
     state: SessionState;
     createdAt: Date;
     updatedAt: Date;

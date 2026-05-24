@@ -21,11 +21,83 @@ const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
+const patient_data_utils_1 = require("../integrations/shared/patient-data-utils");
+const date_utils_1 = require("../integrations/shared/date-utils");
 const openai_service_1 = require("../llm/openai.service");
 const gigachat_service_1 = require("../llm/gigachat.service");
 const booking_service_1 = require("../booking/booking.service");
 const token_usage_entity_1 = require("../database/entities/token-usage.entity");
-const MAX_TOOL_ITERATIONS = 10;
+const MAX_TOOL_ITERATIONS = 6;
+const DISCOVERY_TOOLS = new Set(['find_doctors_and_slots', 'find_available_at_time', 'find_services']);
+const POST_DISCOVERY_DROP = new Set(['get_clinics', 'find_services']);
+const COMPACTABLE_SEARCH_TOOLS = new Set([
+    'find_doctors',
+    'find_doctors_and_slots',
+    'find_services',
+    'get_available_slots',
+    'find_available_at_time',
+    'get_clinics',
+]);
+const DATE_AWARE_TOOLS = new Set([
+    'find_doctors_and_slots',
+    'find_available_at_time',
+    'get_available_slots',
+    'find_patient_appointment',
+]);
+function extractValidSlotDates(msgs) {
+    const dates = new Set();
+    for (const m of msgs) {
+        if (m.role !== 'function')
+            continue;
+        const name = m.name ?? '';
+        if (!['find_doctors_and_slots', 'find_services', 'get_available_slots', 'find_available_at_time'].includes(name))
+            continue;
+        try {
+            const parsed = JSON.parse(m.content);
+            const arr = Array.isArray(parsed) ? parsed : (parsed?.available ?? parsed?.nearest ?? []);
+            for (const r of arr) {
+                if (r?.slot?.date)
+                    dates.add(r.slot.date);
+                if (r?.date)
+                    dates.add(r.date);
+                if (Array.isArray(r?.allSlots)) {
+                    for (const s of r.allSlots) {
+                        if (s?.date)
+                            dates.add(s.date);
+                        if (s?.dtSlot?.dt_start)
+                            dates.add(String(s.dtSlot.dt_start).slice(0, 10));
+                    }
+                }
+            }
+        }
+        catch { }
+    }
+    return dates;
+}
+function compactSearchPairs(msgs) {
+    const out = [];
+    for (let i = 0; i < msgs.length; i++) {
+        const m = msgs[i];
+        if (m.role === 'assistant' &&
+            m.function_call &&
+            COMPACTABLE_SEARCH_TOOLS.has(m.function_call.name) &&
+            i + 1 < msgs.length &&
+            msgs[i + 1].role === 'function' &&
+            msgs[i + 1].name === m.function_call.name) {
+            i++;
+            continue;
+        }
+        out.push(m);
+    }
+    return out;
+}
+const BOOKING_NOTE_PREFIX = '[Завершённая запись] ';
+function formatRuDateTime(iso) {
+    const m = iso.match(/(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+    if (!m)
+        return iso;
+    return `${m[3]}.${m[2]}.${m[1]} ${m[4]}:${m[5]}`;
+}
 const SYMPTOM_PATTERNS = [
     /болит|болит|боль|болью|болезненн/i,
     /тошнит|тошнота|рвот/i,
@@ -84,8 +156,78 @@ let ChatService = ChatService_1 = class ChatService {
                 this.logger.warn(`Failed to decrypt patient data for session ${sessionId}: ${String(err)}`);
             }
         }
+        this.foldCompletedBookings(session);
         session.messages.push({ role: 'user', content: message });
         session.updatedAt = new Date();
+        if (session.pendingConfirmation) {
+            const pcfm = session.pendingConfirmation;
+            const trimmed = message.trim();
+            const declined = /^\s*(нет|не\s|не,|отказ|отмен)/i.test(trimmed);
+            const confirmedRe = /(?<![а-яё])(да|подтверждаю|записывайте|запишите|конечно|окей|ок)(?![а-яё])/i;
+            if (!declined && confirmedRe.test(trimmed)) {
+                session.pendingConfirmation = undefined;
+                let toolResult;
+                if (pcfm.toolName === 'reschedule_appointment' && !session.misType) {
+                    toolResult = await this.booking.rescheduleAppointment({
+                        oldId: pcfm.toolArgs.oldId,
+                        type: pcfm.toolArgs.type,
+                        doctorId: pcfm.toolArgs.doctorId,
+                        serviceId: pcfm.toolArgs.serviceId,
+                        clinicId: pcfm.toolArgs.clinicId,
+                        newStartTime: pcfm.toolArgs.newStartTime,
+                        patientId: session.clientId,
+                    });
+                }
+                else {
+                    toolResult = await this.booking.executeTool(pcfm.toolName, pcfm.toolArgs, sessionId, session.clientId, session.misType ?? undefined, session.clinicNetId, session.townId, session.districtId, session.patient);
+                    if (pcfm.toolName === 'book_appointment') {
+                        this.rememberMedflexBooking(session, pcfm.toolArgs, toolResult);
+                    }
+                    else if (pcfm.toolName === 'cancel_appointment' && pcfm.toolArgs.uuid) {
+                        this.forgetMedflexBooking(session, String(pcfm.toolArgs.uuid));
+                    }
+                }
+                session.messages.push({
+                    role: 'assistant',
+                    content: '',
+                    function_call: { name: pcfm.toolName, arguments: JSON.stringify(pcfm.toolArgs) },
+                });
+                session.messages.push({
+                    role: 'function',
+                    name: pcfm.toolName,
+                    content: JSON.stringify(toolResult),
+                });
+                if (toolResult?.conflict === true && pcfm.toolName === 'book_appointment') {
+                    const cr = toolResult;
+                    session.pendingConflict = {
+                        oldId: 0,
+                        oldType: 'doctor',
+                        oldUuid: cr.existingAppointment?.uuid,
+                        existingDescription: cr.existingAppointment?.description,
+                        newDoctorId: pcfm.toolArgs.doctorId,
+                        newServiceId: pcfm.toolArgs.serviceId,
+                        newClinicId: pcfm.toolArgs.clinicId,
+                        newStartTime: pcfm.toolArgs.startTime,
+                        pendingBookingArgs: cr.pendingBookingArgs,
+                    };
+                    session.state = 'conflict_resolution';
+                }
+                else if (toolResult?.success === true) {
+                    const r = toolResult;
+                    if (pcfm.toolName === 'book_appointment') {
+                        if (r.uuid)
+                            this.recordCompletedBooking(session, pcfm.toolArgs, r.uuid);
+                        this.compactSearchResults(session);
+                    }
+                    else if (pcfm.toolName === 'reschedule_appointment') {
+                        this.compactSearchResults(session);
+                    }
+                }
+            }
+            else {
+                session.pendingConfirmation = undefined;
+            }
+        }
         if (session.pendingConflict) {
             const pc = session.pendingConflict;
             const wantsReplace = /замени|заменить|замените|заменяй/i.test(message);
@@ -96,7 +238,10 @@ let ChatService = ChatService_1 = class ChatService {
                 let rescheduleResult;
                 if (session.misType === 'medflex' && pc.oldUuid) {
                     await this.booking.executeTool('cancel_appointment', { uuid: pc.oldUuid }, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
-                    rescheduleResult = await this.booking.executeTool('book_appointment', pc.pendingBookingArgs ?? { doctorId: pc.newDoctorId, clinicId: pc.newClinicId, startTime: pc.newStartTime }, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
+                    this.forgetMedflexBooking(session, pc.oldUuid);
+                    const rebookArgs = pc.pendingBookingArgs ?? { doctorId: pc.newDoctorId, clinicId: pc.newClinicId, startTime: pc.newStartTime };
+                    rescheduleResult = await this.booking.executeTool('book_appointment', rebookArgs, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
+                    this.rememberMedflexBooking(session, rebookArgs, rescheduleResult);
                 }
                 else if (session.misType && session.misType !== 'medflex') {
                     await this.booking.executeTool('cancel_appointment', { id: pc.oldId, type: pc.oldType }, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
@@ -123,20 +268,40 @@ let ChatService = ChatService_1 = class ChatService {
             else if (/оставить|оставь|оставьте|оставим|оставляем|обе|оба|не замен/i.test(message)) {
                 session.pendingConflict = undefined;
                 session.state = 'idle';
-                const bookResult = await this.booking.executeTool('book_appointment', {
+                const keepBothArgs = pc.pendingBookingArgs ?? {
                     doctorId: pc.newDoctorId,
                     serviceId: pc.newServiceId,
                     clinicId: pc.newClinicId,
                     startTime: pc.newStartTime,
-                }, sessionId, session.clientId, session.misType ?? undefined, session.clinicNetId, session.townId, session.districtId, session.patient);
+                };
+                const bookResult = await this.booking.executeTool('book_appointment', keepBothArgs, sessionId, session.clientId, session.misType ?? undefined, session.clinicNetId, session.townId, session.districtId, session.patient);
+                this.rememberMedflexBooking(session, keepBothArgs, bookResult);
                 session.messages.push({ role: 'assistant', content: '', function_call: { name: 'book_appointment', arguments: JSON.stringify({ doctorId: pc.newDoctorId, clinicId: pc.newClinicId, startTime: pc.newStartTime }) } });
                 session.messages.push({ role: 'function', name: 'book_appointment', content: JSON.stringify(bookResult) });
             }
         }
-        const tools = this.booking.getTools(session.misType ?? undefined);
+        const tools = this.booking.getTools(session.misType ?? undefined, !!session.patient);
         const today = new Date();
         const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-        let systemWithDate = `${this.systemPrompt}\nСегодняшняя дата: ${todayStr}. При указании дат всегда используй формат YYYY-MM-DD с текущим годом.`;
+        const dayNames = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
+        const todayDayName = dayNames[today.getDay()];
+        let systemWithDate = `${this.systemPrompt}\nСегодня: ${todayStr} (${todayDayName}). ` +
+            `Для слов "вторник"/"завтра"/"послезавтра" используй dayOfWeek; date — только для явных дат с числом.`;
+        if (session.misType === 'medflex' && !session.patient) {
+            systemWithDate +=
+                `\n\nГОСТЕВОЙ РЕЖИМ MedFlex: операции "мои записи"/"отменить"/"перенести" недоступны — для этого пациенту нужно войти в личный кабинет клиники.`;
+        }
+        if (session.misType === 'medflex' && session.patient) {
+            systemWithDate +=
+                `\n\nДанные пациента уже в сессии — не спрашивай повторно. В book_appointment передавай только doctorId, clinicId, specialityId, startTime, endTime, price.`;
+        }
+        if (session.misType === 'medflex' && session.completedBookingNotes && session.completedBookingNotes.length > 0) {
+            systemWithDate +=
+                `\n\nЗАПИСИ ПАЦИЕНТА В ТЕКУЩЕЙ СЕССИИ:\n` +
+                    session.completedBookingNotes.map((n, i) => `${i + 1}. ${n}`).join('\n') +
+                    `\nДля отмены/переноса используй uuid НАПРЯМУЮ (без get_patient_appointments). ` +
+                    `Если запись одна — используй её uuid без уточнений. Если несколько — выбери правильную по упомянутой пациентом специальности/врачу/услуге.`;
+        }
         if (session.state === 'conflict_resolution' && session.pendingConflict) {
             const pc = session.pendingConflict;
             if (pc.oldUuid) {
@@ -195,15 +360,19 @@ let ChatService = ChatService_1 = class ChatService {
         return result.type === 'text' ? result.content : 'Пожалуйста, обратитесь к специалисту клиники.';
     }
     async runToolLoop(session, context, tools, sessionId) {
+        let activeTools = session.messages.some((m) => m.role === 'function' && m.name !== undefined && DISCOVERY_TOOLS.has(m.name))
+            ? tools.filter((t) => !POST_DISCOVERY_DROP.has(t.name))
+            : tools;
         for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
             const isLastIteration = i === MAX_TOOL_ITERATIONS - 1;
             const result = session.provider === 'gigachat'
-                ? await this.gigaChat.complete(context, tools, session.model, isLastIteration)
-                : await this.openAi.complete(context, tools, session.model);
+                ? await this.gigaChat.complete(context, activeTools, session.model, isLastIteration)
+                : await this.openAi.complete(context, activeTools, session.model);
             this.saveUsage(result.usage, sessionId, session.clinicNetId, session.provider);
             if (result.type === 'text') {
                 return result.content;
             }
+            this.normalizeDateArgs(result.toolName, result.toolArgs, session);
             const assistantMsg = {
                 role: 'assistant',
                 content: '',
@@ -230,12 +399,68 @@ let ChatService = ChatService_1 = class ChatService {
                 session.messages.push(retryBlockMsg);
                 continue;
             }
-            if (result.toolName === 'book_appointment' || result.toolName === 'reschedule_appointment') {
+            if (result.toolName === 'book_appointment' || result.toolName === 'reschedule_appointment' || result.toolName === 'cancel_appointment') {
+                if (result.toolName === 'book_appointment' &&
+                    session.misType === 'medflex' &&
+                    !session.patient) {
+                    const missing = [];
+                    if ((0, patient_data_utils_1.isPlaceholderValue)(result.toolArgs.firstName))
+                        missing.push('имя');
+                    if ((0, patient_data_utils_1.isPlaceholderValue)(result.toolArgs.lastName))
+                        missing.push('фамилию');
+                    if ((0, patient_data_utils_1.isMissingPhone)(result.toolArgs.phone))
+                        missing.push('телефон');
+                    if ((0, patient_data_utils_1.isMissingBirthday)(result.toolArgs.birthday))
+                        missing.push('дату рождения');
+                    if (missing.length > 0) {
+                        const dataMsg = {
+                            role: 'function',
+                            name: result.toolName,
+                            content: JSON.stringify({
+                                success: false,
+                                reason: 'patient_data_required',
+                                message: `Данные пациента не получены (${missing.join(', ')}). ` +
+                                    `НЕ вызывай book_appointment с плейсхолдерами или пустыми значениями. ` +
+                                    `Сначала одним сообщением спроси у пользователя фамилию, имя, отчество, телефон и дату рождения, дождись ответа, ` +
+                                    `затем покажи сводку, спроси подтверждение и только после "да" вызывай book_appointment с РЕАЛЬНЫМИ значениями.`,
+                            }),
+                        };
+                        context.push(dataMsg);
+                        session.messages.push(dataMsg);
+                        continue;
+                    }
+                }
+                if (result.toolName === 'book_appointment' && typeof result.toolArgs.startTime === 'string') {
+                    const validDates = extractValidSlotDates(session.messages);
+                    if (validDates.size > 0) {
+                        const reqDate = result.toolArgs.startTime.slice(0, 10);
+                        if (!validDates.has(reqDate)) {
+                            const dateMsg = {
+                                role: 'function',
+                                name: result.toolName,
+                                content: JSON.stringify({
+                                    success: false,
+                                    reason: 'invalid_slot_date',
+                                    message: `Дата startTime "${reqDate}" не соответствует ни одному найденному слоту. ` +
+                                        `Доступные даты слотов: ${[...validDates].sort().join(', ')}. ` +
+                                        `Возьми startTime/endTime ИЗ dtSlot выбранного слота в allSlots — не вычисляй дату из текста.`,
+                                }),
+                            };
+                            context.push(dateMsg);
+                            session.messages.push(dateMsg);
+                            continue;
+                        }
+                    }
+                }
                 const lastUserMsg = session.messages
                     .filter((m) => m.role === 'user')
                     .slice(-1)[0]?.content ?? '';
-                const confirmed = /да|подтверждаю|записывайте|запишите|конечно|окей|заменить|замените|(^|\s)ок(\s|[!.,]|$)/i.test(lastUserMsg.trim());
+                const confirmed = /(?<![а-яё])(да|подтверждаю|записывайте|запишите|конечно|окей|заменить|замените|ок)(?![а-яё])/i.test(lastUserMsg.trim());
                 if (!confirmed) {
+                    session.pendingConfirmation = {
+                        toolName: result.toolName,
+                        toolArgs: { ...result.toolArgs },
+                    };
                     const blockMsg = {
                         role: 'function',
                         name: result.toolName,
@@ -246,6 +471,7 @@ let ChatService = ChatService_1 = class ChatService {
                     };
                     context.push(blockMsg);
                     session.messages.push(blockMsg);
+                    this.compactSearchResults(session, context);
                     continue;
                 }
                 if (result.toolName === 'book_appointment' && !result.toolArgs.doctorId && !result.toolArgs.serviceId) {
@@ -292,14 +518,29 @@ let ChatService = ChatService_1 = class ChatService {
                                     ' спроси: оставить обе записи или заменить старую на новую? НЕ вызывай инструменты.';
                         }
                         const textResult = session.provider === 'gigachat'
-                            ? await this.gigaChat.complete(context, tools, session.model, true)
-                            : await this.openAi.complete(context, tools, session.model);
+                            ? await this.gigaChat.complete(context, [], session.model, true)
+                            : await this.openAi.complete(context, [], session.model);
                         this.saveUsage(textResult.usage, sessionId, session.clinicNetId, session.provider);
                         return textResult.type === 'text' ? textResult.content : 'Уточните ваш выбор.';
                     }
                 }
             }
             const toolResult = await this.booking.executeTool(result.toolName, result.toolArgs, sessionId, session.clientId, session.misType ?? undefined, session.clinicNetId, session.townId, session.districtId, session.patient);
+            if (result.toolName === 'book_appointment') {
+                this.rememberMedflexBooking(session, result.toolArgs, toolResult);
+            }
+            else if (result.toolName === 'cancel_appointment' && result.toolArgs.uuid) {
+                this.forgetMedflexBooking(session, String(result.toolArgs.uuid));
+            }
+            const isCompletedBooking = (result.toolName === 'book_appointment' || result.toolName === 'reschedule_appointment') &&
+                toolResult?.success === true;
+            if (isCompletedBooking) {
+                const r = toolResult;
+                if (r.uuid && result.toolName === 'book_appointment') {
+                    this.recordCompletedBooking(session, result.toolArgs, r.uuid);
+                }
+                this.compactSearchResults(session, context);
+            }
             if (toolResult?.conflict === true && result.toolName === 'book_appointment') {
                 const cr = toolResult;
                 session.pendingConflict = {
@@ -329,8 +570,8 @@ let ChatService = ChatService_1 = class ChatService {
                             ' НЕ вызывай инструменты.';
                 }
                 const conflictTextResult = session.provider === 'gigachat'
-                    ? await this.gigaChat.complete(context, tools, session.model, true)
-                    : await this.openAi.complete(context, tools, session.model);
+                    ? await this.gigaChat.complete(context, [], session.model, true)
+                    : await this.openAi.complete(context, [], session.model);
                 this.saveUsage(conflictTextResult.usage, sessionId, session.clinicNetId, session.provider);
                 return conflictTextResult.type === 'text' ? conflictTextResult.content : 'Уточните ваш выбор.';
             }
@@ -341,6 +582,9 @@ let ChatService = ChatService_1 = class ChatService {
             };
             context.push(funcMsg);
             session.messages.push(funcMsg);
+            if (DISCOVERY_TOOLS.has(result.toolName)) {
+                activeTools = activeTools.filter((t) => !POST_DISCOVERY_DROP.has(t.name));
+            }
         }
         return 'Не удалось обработать запрос. Попробуйте переформулировать.';
     }
@@ -362,6 +606,185 @@ let ChatService = ChatService_1 = class ChatService {
             });
         }
         return this.sessions.get(sessionId);
+    }
+    rememberMedflexBooking(session, args, result) {
+        if (session.misType !== 'medflex')
+            return;
+        const r = result;
+        if (!r?.success || !r.uuid)
+            return;
+        if (!session.patient && args.firstName && args.lastName && args.phone) {
+            session.patient = {
+                firstName: String(args.firstName),
+                lastName: String(args.lastName),
+                secondName: args.secondName ? String(args.secondName) : undefined,
+                phone: String(args.phone),
+                birthday: args.birthday ? String(args.birthday) : '',
+            };
+        }
+        if (!session.recentBookings)
+            session.recentBookings = [];
+        if (!session.recentBookings.some((b) => b.uuid === r.uuid)) {
+            session.recentBookings.push({
+                uuid: r.uuid,
+                description: typeof result.message === 'string' ? result.message : '',
+                startTime: String(args.startTime ?? ''),
+            });
+        }
+    }
+    normalizeDateArgs(toolName, args, session) {
+        if (!args || typeof args !== 'object')
+            return;
+        if (!DATE_AWARE_TOOLS.has(toolName))
+            return;
+        const lastUser = [...session.messages].reverse().find((m) => m.role === 'user');
+        if (!lastUser?.content)
+            return;
+        const txt = lastUser.content;
+        const dateField = toolName === 'get_available_slots' ? 'targetDate' : 'date';
+        const otherDateField = dateField === 'date' ? 'targetDate' : 'date';
+        const canonical = (0, date_utils_1.findDayWord)(txt);
+        if (canonical) {
+            args.dayOfWeek = canonical;
+            delete args.date;
+            delete args.targetDate;
+            if (/следующ/iu.test(txt))
+                args.nextWeek = true;
+            this.logger.debug(`normalizeDateArgs: dayOfWeek="${canonical}"`);
+            return;
+        }
+        if (/следующ[а-яё]*\s+недел/iu.test(txt) || /начал[а-яё]*\s+недел/iu.test(txt)) {
+            delete args.date;
+            delete args.targetDate;
+            args.dayOfWeek = 'понедельник';
+            args.nextWeek = true;
+            args.mode = 'week';
+            this.logger.debug('normalizeDateArgs: next-week / начало недели → week from Monday');
+            return;
+        }
+        if (/конц[а-яё]*\s+недел/iu.test(txt)) {
+            delete args.date;
+            delete args.targetDate;
+            args.dayOfWeek = 'пятница';
+            args.mode = 'week';
+            this.logger.debug('normalizeDateArgs: конец недели → nearest Friday + week mode');
+            return;
+        }
+        if (/через\s+недел/iu.test(txt)) {
+            const d = new Date();
+            d.setDate(d.getDate() + 7);
+            d.setHours(0, 0, 0, 0);
+            const iso = (0, date_utils_1.toDateStr)(d);
+            delete args.dayOfWeek;
+            delete args.nextWeek;
+            delete args[otherDateField];
+            args[dateField] = iso;
+            args.mode = 'week';
+            this.logger.debug(`normalizeDateArgs: in one week → ${iso}`);
+            return;
+        }
+        if (/следующ[а-яё]*\s+месяц/iu.test(txt)) {
+            const d = new Date();
+            d.setMonth(d.getMonth() + 1, 1);
+            d.setHours(0, 0, 0, 0);
+            const iso = (0, date_utils_1.toDateStr)(d);
+            delete args.dayOfWeek;
+            delete args.nextWeek;
+            delete args[otherDateField];
+            args[dateField] = iso;
+            args.mode = 'week';
+            this.logger.debug(`normalizeDateArgs: next month → ${iso}`);
+            return;
+        }
+        if (/через\s+месяц/iu.test(txt)) {
+            const d = new Date();
+            d.setMonth(d.getMonth() + 1);
+            d.setHours(0, 0, 0, 0);
+            const iso = (0, date_utils_1.toDateStr)(d);
+            delete args.dayOfWeek;
+            delete args.nextWeek;
+            delete args[otherDateField];
+            args[dateField] = iso;
+            args.mode = 'week';
+            this.logger.debug(`normalizeDateArgs: in one month → ${iso}`);
+            return;
+        }
+    }
+    forgetMedflexBooking(session, uuid) {
+        if (!session.recentBookings)
+            return;
+        session.recentBookings = session.recentBookings.filter((b) => b.uuid !== uuid);
+    }
+    compactSearchResults(session, context) {
+        session.messages = compactSearchPairs(session.messages);
+        if (context) {
+            const compacted = compactSearchPairs(context);
+            context.length = 0;
+            context.push(...compacted);
+        }
+    }
+    buildBookingNote(session, args, uuid) {
+        let doctorName = `Врач #${args.doctorId}`;
+        let speciality = '';
+        let serviceName = '';
+        let clinicName = '';
+        for (let i = session.messages.length - 1; i >= 0; i--) {
+            const m = session.messages[i];
+            if (m.role !== 'function')
+                continue;
+            if (m.name !== 'find_doctors_and_slots' && m.name !== 'find_services')
+                continue;
+            try {
+                const arr = JSON.parse(m.content);
+                if (!Array.isArray(arr))
+                    continue;
+                const match = arr.find((r) => r.doctorId === args.doctorId);
+                if (!match)
+                    continue;
+                if (match.doctorName)
+                    doctorName = String(match.doctorName);
+                if (match.speciality)
+                    speciality = String(match.speciality);
+                if (m.name === 'find_services' && match.serviceName) {
+                    serviceName = String(match.serviceName);
+                }
+                if (match.slot?.clinicName)
+                    clinicName = String(match.slot.clinicName);
+                break;
+            }
+            catch { }
+        }
+        const dt = formatRuDateTime(String(args.startTime ?? ''));
+        const parts = [dt, doctorName];
+        if (speciality)
+            parts.push(speciality);
+        if (serviceName)
+            parts.push(serviceName);
+        if (clinicName)
+            parts.push(clinicName);
+        const idFields = [
+            `uuid=${uuid}`,
+            args.doctorId ? `doctorId=${args.doctorId}` : '',
+            args.clinicId ? `clinicId=${args.clinicId}` : '',
+            args.specialityId ? `specialityId=${args.specialityId}` : '',
+            args.price !== undefined ? `price=${args.price}` : '',
+        ].filter(Boolean).join(', ');
+        return `${BOOKING_NOTE_PREFIX}${parts.join(', ')}. ${idFields}`;
+    }
+    recordCompletedBooking(session, args, uuid) {
+        if (!session.completedBookingNotes)
+            session.completedBookingNotes = [];
+        if (session.completedBookingNotes.some((n) => n.includes(uuid)))
+            return;
+        session.completedBookingNotes.push(this.buildBookingNote(session, args, uuid));
+    }
+    foldCompletedBookings(session) {
+        const notes = session.completedBookingNotes ?? [];
+        const folded = session.foldedNotesCount ?? 0;
+        if (notes.length <= folded)
+            return;
+        session.messages = notes.map((content) => ({ role: 'assistant', content }));
+        session.foldedNotesCount = notes.length;
     }
     saveUsage(usage, sessionId, clinicNetId, provider) {
         if (!usage)

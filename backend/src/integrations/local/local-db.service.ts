@@ -19,6 +19,7 @@ import {
   DEFAULT_SEARCH_DAYS,
 } from '../../booking/booking.constants';
 import { LlmTool } from '../../llm/llm.types';
+import { toDateStr, normalizeDayWord, findDayWord, formatRuDateLabel, nextWeekdayDate } from '../shared/date-utils';
 
 export type SlotMode = 'nearest' | 'day' | 'week';
 
@@ -46,7 +47,8 @@ export interface ServiceInfo {
 
 export interface SlotGroup {
   date: string;
-  dayName: string;
+  /** Готовая русская формулировка ("Сегодня"/"Завтра"/"Послезавтра"/"Вторник, 26 мая") — чтобы LLM не парсила date. */
+  dateLabel: string;
   clinicId: number;
   clinicName: string;
   times: string[];
@@ -57,6 +59,8 @@ export interface SlotGroup {
 export interface BookingResult {
   success: boolean;
   appointmentId?: number;
+  /** UUID записи в MedFlex (только для medflex). Используется для последующей отмены/переноса. */
+  uuid?: string;
   message: string;
 }
 
@@ -76,8 +80,6 @@ export interface CancellableAppointment extends PatientAppointmentItem {
   serviceId?: number;
   clinicId: number;
 }
-
-const DAY_NAMES = ['', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
 
 @Injectable()
 export class LocalDbService {
@@ -315,7 +317,7 @@ export class LocalDbService {
 
         result.push({
           date: dateStr,
-          dayName: DAY_NAMES[dbDay],
+          dateLabel: formatRuDateLabel(dateStr),
           clinicId: sched.clinicId,
           clinicName: (sched as any).clinic.name,
           times: mode === 'nearest' ? times.slice(0, 5) : times,
@@ -418,7 +420,7 @@ export class LocalDbService {
 
         result.push({
           date: dateStr,
-          dayName: DAY_NAMES[dbDay],
+          dateLabel: formatRuDateLabel(dateStr),
           clinicId: sched.clinicId,
           clinicName: (sched as any).clinic.name,
           times: mode === 'nearest' ? times.slice(0, 5) : times,
@@ -583,11 +585,7 @@ export class LocalDbService {
     doctorId: number;
     doctorName: string;
     speciality: string;
-    clinicId?: number;
-    clinicName?: string;
     isAvailable: boolean;
-    requestedDate?: string;
-    requestedTime?: string;
     slot?: { date: string; time: string; clinicId: number; clinicName: string } | null;
     allSlots?: Array<{ date: string; time: string; clinicId: number; clinicName: string }>;
   }>> {
@@ -606,24 +604,18 @@ export class LocalDbService {
       doctorId: number;
       doctorName: string;
       speciality: string;
-      clinicId?: number;
-      clinicName?: string;
       isAvailable: boolean;
-      requestedDate?: string;
-      requestedTime?: string;
       slot?: { date: string; time: string; clinicId: number; clinicName: string } | null;
     }> = [];
 
     await Promise.all(doctors.map(async (doc) => {
+      // clinicId/clinicName/requestedDate/requestedTime раньше дублировались на верхнем уровне —
+      // убраны для экономии токенов: клиника есть в slot, исходный запрос LLM видит в истории.
       const item = {
         doctorId: doc.id,
         doctorName: doc.name,
         speciality: doc.speciality,
-        clinicId: resolvedClinicId,
-        clinicName: params.clinicName,
         isAvailable: false,
-        requestedDate: normalizedDate,
-        requestedTime: params.time,
         slot: null,
       };
 
@@ -1024,15 +1016,15 @@ export class LocalDbService {
             },
             targetDate: {
               type: 'string',
-              description: 'Конкретная дата YYYY-MM-DD (только если пациент назвал число месяца), либо "завтра"/"послезавтра". Для дней недели ("в среду", "в пятницу") — используй поле dayOfWeek, не передавай вычисленную дату сюда.',
+              description: 'YYYY-MM-DD или "завтра"/"послезавтра". Для дней недели — dayOfWeek.',
             },
             dayOfWeek: {
               type: 'string',
-              description: 'День недели на русском: "понедельник", "вторник", "среда", "четверг", "пятница", "суббота". ВСЕГДА используй это поле когда пациент говорит "в среду", "в понедельник" и т.п. — сервер сам вычислит правильную дату. НЕ вычисляй дату самостоятельно.',
+              description: '"понедельник"…"воскресенье" — для слов дня, не вычисляй дату сам.',
             },
             nextWeek: {
               type: 'boolean',
-              description: 'true — если пациент сказал "следующей недели" или "в следующий [день]".',
+              description: 'true для "следующей недели" / "в следующий [день]".',
             },
           },
           required: [],
@@ -1071,14 +1063,14 @@ export class LocalDbService {
             speciality: { type: 'string', description: 'Специальность или фамилия врача' },
             clinicId: { type: 'number', description: 'ID клиники (необязательно)' },
             clinicName: { type: 'string', description: 'Название клиники (необязательно)' },
-            date: { type: 'string', description: 'Дата YYYY-MM-DD, "завтра" или "послезавтра". Для дней недели используй поле dayOfWeek. Если пациент говорит "на следующей неделе" без конкретного дня — передай "следующая неделя".' },
-            dayOfWeek: { type: 'string', description: 'День недели на русском: "понедельник", "вторник", "среда", "четверг", "пятница", "суббота". Используй когда пациент говорит "в понедельник", "в следующий вторник" и т.п. — сервер сам вычислит ближайшую дату этого дня.' },
-            nextWeek: { type: 'boolean', description: 'true — если пациент сказал "следующей недели" или "в следующий [день]". Сдвигает дату на одну неделю вперёд.' },
-            time: { type: 'string', description: 'Желаемое время строго в формате HH:MM, например "09:00", "15:30". НЕ передавай сюда слова "утром", "вечером", "утреннее время" — это не валидный формат. Если пациент сказал только "утром" — не передавай time вообще, просто ищи доступные слоты.' },
+            date: { type: 'string', description: 'YYYY-MM-DD / "завтра" / "послезавтра". Для дней недели — dayOfWeek.' },
+            dayOfWeek: { type: 'string', description: '"понедельник"…"воскресенье", для слов дня.' },
+            nextWeek: { type: 'boolean', description: 'true для "следующей недели" / "в следующий [день]".' },
+            time: { type: 'string', description: 'HH:MM ("09:00"). Не передавай "утром"/"вечером" — фильтруй слоты в ответе.' },
             mode: {
               type: 'string',
               enum: ['nearest', 'day', 'week'],
-              description: 'Если задан, используется для поиска ближайших слотов (по умолчанию nearest).',
+              description: 'default nearest.',
             },
           },
           required: ['speciality'],
@@ -1098,9 +1090,9 @@ export class LocalDbService {
             query: { type: 'string', description: 'Имя врача, фамилия или специальность, либо название процедуры' },
             date: { type: 'string', description: 'Дата записи YYYY-MM-DD' },
             time: { type: 'string', description: 'Время записи HH:MM' },
-            dayOfMonth: { type: 'number', description: 'Число месяца (1–31) когда пациент говорит "на 26-е", "26 числа" и т.д. Бэкенд найдёт ближайшую дату с этим числом.' },
-            dayOfWeek: { type: 'string', description: 'День недели на русском — "понедельник", "вторник" и т.д. Бэкенд автоматически вычислит ближайшую дату этого дня.' },
-            timeExpression: { type: 'string', description: 'Разговорное время — "9 утра", "6 вечера", "9:30 утра", "14:00" и т.д. Бэкенд переведёт в HH:MM.' },
+            dayOfMonth: { type: 'number', description: '1–31 для "на 26-е", "26 числа".' },
+            dayOfWeek: { type: 'string', description: '"понедельник"…"воскресенье".' },
+            timeExpression: { type: 'string', description: 'Разговорное время — "9 утра", "6 вечера", "9:30 утра".' },
           },
           required: [],
         },
@@ -1322,29 +1314,12 @@ function nearestDayOfMonth(day: number): string | null {
 }
 
 function nearestWeekdayDate(dayName: string, weekOffset = 0): string | null {
-  const map: Record<string, number> = {
-    понедельник: 1, вторник: 2, среда: 3, среду: 3,
-    четверг: 4, пятница: 5, пятницу: 5, суббота: 6, субботу: 6,
-    воскресенье: 0,
-  };
-  const target = map[dayName.toLowerCase().trim()];
-  if (target === undefined) return null;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const current = today.getDay();
-  let diff = (target - current + 7) % 7;
-  if (diff === 0) diff = 7;
-  diff += weekOffset * 7;
-  const result = new Date(today);
-  result.setDate(today.getDate() + diff);
-  return toDateStr(result);
-}
-
-function toDateStr(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
+  // Принимаем любую морфологическую форму (падежи, числа), приводим к канонической.
+  const canonical = normalizeDayWord(dayName);
+  if (!canonical || canonical === 'сегодня' || canonical === 'завтра' || canonical === 'послезавтра') return null;
+  // Единый helper в shared/date-utils — корректно обрабатывает weekOffset
+  // (без двойного сдвига, когда ближайший день уже в следующей неделе).
+  return nextWeekdayDate(canonical, weekOffset);
 }
 
 function toTimeStr(date: Date): string {
@@ -1386,7 +1361,10 @@ function resolveRelativeDate(expr: string): Date | null {
   if (s === 'завтра') { const d = new Date(today); d.setDate(d.getDate() + 1); return d; }
   if (s === 'послезавтра') { const d = new Date(today); d.setDate(d.getDate() + 2); return d; }
 
-  if (/следующ.*недел|next week/.test(s) && !/понедельник|вторник|среда|четверг|пятница|суббота|воскресенье/.test(s)) {
+  // "следующая неделя" без конкретного дня → ближайший понедельник.
+  const dayInText = findDayWord(s);
+  const isNextWeek = /следующ/iu.test(s);
+  if (isNextWeek && !dayInText) {
     const resolved = nearestWeekdayDate('понедельник', 0);
     if (resolved) {
       const [y, m, d] = resolved.split('-').map(Number);
@@ -1394,15 +1372,11 @@ function resolveRelativeDate(expr: string): Date | null {
     }
   }
 
-  const dayNames = ['воскресенье','понедельник','вторник','среда','среду','четверг','пятница','пятницу','суббота','субботу'];
-  const nextWeekOffset = /следующ/.test(s) ? 1 : 0;
-  for (const name of dayNames) {
-    if (s.includes(name)) {
-      const resolved = nearestWeekdayDate(name, nextWeekOffset);
-      if (resolved) {
-        const [y, m, d] = resolved.split('-').map(Number);
-        return new Date(y, m - 1, d);
-      }
+  if (dayInText) {
+    const resolved = nearestWeekdayDate(dayInText, isNextWeek ? 1 : 0);
+    if (resolved) {
+      const [y, m, d] = resolved.split('-').map(Number);
+      return new Date(y, m - 1, d);
     }
   }
   return null;

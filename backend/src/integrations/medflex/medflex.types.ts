@@ -129,6 +129,45 @@ export interface MfAppointmentHistory {
   };
 }
 
+// ── Услуги (per /services/categories/ и /services/prices/) ──────────────────
+// В отличие от specialities (квалификация врача), services — конкретные процедуры
+// (УЗИ сердца, пилинг, и т.д.). Связаны с врачами через doctor_ids. Бронирование
+// идёт по специальности врача (`/direct_appointment/doctor/execute/`), но цена
+// в appointment.price для процедуры берётся из service.price.
+
+export interface MfServiceCategory {
+  id: number;
+  name: string;
+}
+
+export interface MfService {
+  /** ID услуги — строка по спеке MedFlex (пример из спеки: "8038"). */
+  id: string;
+  category_id: number;
+  name: string;
+  /** Длительность в минутах; может быть null (для лабораторных, например). */
+  duration: number | null;
+  price: number;
+  /** ID врачей, выполняющих эту услугу. Может быть пустым. */
+  doctor_ids: number[];
+}
+
+/** Обёртка ответа `/services/categories/`: data вложен под `lpu_id` + `categories`. */
+export interface MfServiceCategoriesResponse {
+  count: number;
+  num_pages: number;
+  links: { next: string | null; previous: string | null };
+  data: { lpu_id: number; categories: MfServiceCategory[] };
+}
+
+/** Обёртка ответа `/services/prices/`: data вложен под `lpu_id` + `services`. */
+export interface MfServicePricesResponse {
+  count: number;
+  num_pages: number;
+  links: { next: string | null; previous: string | null };
+  data: { lpu_id: number; services: MfService[] };
+}
+
 // ── Географические модели (v2, для будущей геофильтрации) ────────────────────
 
 export interface MfTown {

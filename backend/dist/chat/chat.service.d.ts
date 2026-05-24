@@ -24,6 +24,13 @@ export declare class ChatService implements OnModuleInit {
     getHistory(sessionId: string): ChatMessage[];
     clearSession(sessionId: string): void;
     private getOrCreateSession;
+    private rememberMedflexBooking;
+    private normalizeDateArgs;
+    private forgetMedflexBooking;
+    private compactSearchResults;
+    private buildBookingNote;
+    private recordCompletedBooking;
+    private foldCompletedBookings;
     private saveUsage;
     private cleanExpiredSessions;
 }

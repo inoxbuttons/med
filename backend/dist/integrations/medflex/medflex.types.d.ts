@@ -117,6 +117,42 @@ export interface MfAppointmentHistory {
         birthday: string;
     };
 }
+export interface MfServiceCategory {
+    id: number;
+    name: string;
+}
+export interface MfService {
+    id: string;
+    category_id: number;
+    name: string;
+    duration: number | null;
+    price: number;
+    doctor_ids: number[];
+}
+export interface MfServiceCategoriesResponse {
+    count: number;
+    num_pages: number;
+    links: {
+        next: string | null;
+        previous: string | null;
+    };
+    data: {
+        lpu_id: number;
+        categories: MfServiceCategory[];
+    };
+}
+export interface MfServicePricesResponse {
+    count: number;
+    num_pages: number;
+    links: {
+        next: string | null;
+        previous: string | null;
+    };
+    data: {
+        lpu_id: number;
+        services: MfService[];
+    };
+}
 export interface MfTown {
     id: number;
     name: string;

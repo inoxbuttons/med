@@ -19,6 +19,6 @@ export declare class BookingService {
         type: "doctor" | "service";
     }>;
     rescheduleAppointment(params: Parameters<LocalDbService['rescheduleAppointment']>[0]): Promise<import("../integrations/local/local-db.service").BookingResult>;
-    getTools(misType?: string): LlmTool[];
+    getTools(misType?: string, hasPatient?: boolean): LlmTool[];
     executeTool(name: string, args: Record<string, any>, _sessionId?: string, clientId?: number, misType?: string, clinicNetId?: number, townId?: number, districtId?: number, patient?: PatientData): Promise<unknown>;
 }

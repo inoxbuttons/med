@@ -30,7 +30,7 @@ const service_working_hours_entity_1 = require("../../database/entities/service-
 const service_exception_entity_1 = require("../../database/entities/service-exception.entity");
 const service_appointment_entity_1 = require("../../database/entities/service-appointment.entity");
 const booking_constants_1 = require("../../booking/booking.constants");
-const DAY_NAMES = ['', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
+const date_utils_1 = require("../shared/date-utils");
 let LocalDbService = LocalDbService_1 = class LocalDbService {
     constructor(clinicRepo, doctorRepo, doctorLocationRepo, workingHoursRepo, exceptionRepo, serviceRepo, serviceByClinicRepo, serviceScheduleRepo, appointmentRepo, serviceWorkingHoursRepo, serviceExceptionRepo, serviceAppointmentRepo) {
         this.clinicRepo = clinicRepo;
@@ -150,8 +150,8 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
         const { from, days } = buildDateRange(mode, targetDate);
         const to = new Date(from);
         to.setDate(to.getDate() + days);
-        const fromStr = toDateStr(from);
-        const toStr = toDateStr(to);
+        const fromStr = (0, date_utils_1.toDateStr)(from);
+        const toStr = (0, date_utils_1.toDateStr)(to);
         const exceptions = await this.exceptionRepo
             .createQueryBuilder('de')
             .where('de.doctor_id = :doctorId', { doctorId })
@@ -179,7 +179,7 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
             date.setHours(0, 0, 0, 0);
             const jsDay = date.getDay();
             const dbDay = jsDay === 0 ? 7 : jsDay;
-            const dateStr = toDateStr(date);
+            const dateStr = (0, date_utils_1.toDateStr)(date);
             const daySchedules = workingHours.filter((wh) => wh.dayOfWeek === dbDay);
             if (daySchedules.length === 0)
                 continue;
@@ -207,7 +207,7 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
                     continue;
                 result.push({
                     date: dateStr,
-                    dayName: DAY_NAMES[dbDay],
+                    dateLabel: (0, date_utils_1.formatRuDateLabel)(dateStr),
                     clinicId: sched.clinicId,
                     clinicName: sched.clinic.name,
                     times: mode === 'nearest' ? times.slice(0, 5) : times,
@@ -233,8 +233,8 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
         const { from, days } = buildDateRange(mode, targetDate);
         const to = new Date(from);
         to.setDate(to.getDate() + days);
-        const fromStr = toDateStr(from);
-        const toStr = toDateStr(to);
+        const fromStr = (0, date_utils_1.toDateStr)(from);
+        const toStr = (0, date_utils_1.toDateStr)(to);
         const exceptions = await this.serviceExceptionRepo
             .createQueryBuilder('se')
             .where('se.service_id = :serviceId', { serviceId })
@@ -262,7 +262,7 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
             date.setHours(0, 0, 0, 0);
             const jsDay = date.getDay();
             const dbDay = jsDay === 0 ? 7 : jsDay;
-            const dateStr = toDateStr(date);
+            const dateStr = (0, date_utils_1.toDateStr)(date);
             const daySchedules = workingHours.filter((wh) => wh.dayOfWeek === dbDay);
             if (daySchedules.length === 0)
                 continue;
@@ -290,7 +290,7 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
                     continue;
                 result.push({
                     date: dateStr,
-                    dayName: DAY_NAMES[dbDay],
+                    dateLabel: (0, date_utils_1.formatRuDateLabel)(dateStr),
                     clinicId: sched.clinicId,
                     clinicName: sched.clinic.name,
                     times: mode === 'nearest' ? times.slice(0, 5) : times,
@@ -409,7 +409,7 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
         if (doctors.length === 0)
             return [];
         const normalizedDate = params.date
-            ? (resolveRelativeDate(params.date) ? toDateStr(resolveRelativeDate(params.date)) : params.date)
+            ? (resolveRelativeDate(params.date) ? (0, date_utils_1.toDateStr)(resolveRelativeDate(params.date)) : params.date)
             : undefined;
         const mode = params.mode ?? (normalizedDate ? 'day' : 'nearest');
         const results = [];
@@ -418,16 +418,12 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
                 doctorId: doc.id,
                 doctorName: doc.name,
                 speciality: doc.speciality,
-                clinicId: resolvedClinicId,
-                clinicName: params.clinicName,
                 isAvailable: false,
-                requestedDate: normalizedDate,
-                requestedTime: params.time,
                 slot: null,
             };
             if (params.time) {
                 const dayMode = mode === 'week' ? 'week' : 'day';
-                const targetDate = normalizedDate ?? toDateStr(new Date());
+                const targetDate = normalizedDate ?? (0, date_utils_1.toDateStr)(new Date());
                 const slots = await this.getDoctorSlots(doc.id, resolvedClinicId, dayMode, targetDate);
                 for (const sg of slots) {
                     if (sg.times.includes(params.time)) {
@@ -477,7 +473,7 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
         if (doctors.length === 0)
             return { available: [], nearest: [] };
         const resolvedDate = resolveRelativeDate(params.date)
-            ? toDateStr(resolveRelativeDate(params.date))
+            ? (0, date_utils_1.toDateStr)(resolveRelativeDate(params.date))
             : params.date;
         const available = [];
         const allNearest = [];
@@ -567,7 +563,7 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
         const items = [
             ...doctorAppts.map((a) => ({
                 type: 'doctor',
-                date: toDateStr(a.startTime),
+                date: (0, date_utils_1.toDateStr)(a.startTime),
                 time: toTimeStr(a.startTime),
                 clinicName: a.clinic.name,
                 doctorName: a.doctor?.name ?? undefined,
@@ -576,7 +572,7 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
             })),
             ...serviceAppts.map((a) => ({
                 type: 'service',
-                date: toDateStr(a.startTime),
+                date: (0, date_utils_1.toDateStr)(a.startTime),
                 time: toTimeStr(a.startTime),
                 clinicName: a.clinic.name,
                 serviceName: a.service?.name ?? undefined,
@@ -613,7 +609,7 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
         for (const a of doctorAppts) {
             const doctorName = a.doctor?.name ?? '';
             const speciality = a.doctor?.speciality?.name ?? '';
-            const apptDate = toDateStr(a.startTime);
+            const apptDate = (0, date_utils_1.toDateStr)(a.startTime);
             const apptTime = toTimeStr(a.startTime);
             const matchesQuery = !query || doctorName.toLowerCase().includes(query.toLowerCase())
                 || speciality.toLowerCase().includes(query.toLowerCase());
@@ -635,7 +631,7 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
         }
         for (const a of serviceAppts) {
             const serviceName = a.service?.name ?? '';
-            const apptDate = toDateStr(a.startTime);
+            const apptDate = (0, date_utils_1.toDateStr)(a.startTime);
             const apptTime = toTimeStr(a.startTime);
             const matchesQuery = !query || serviceName.toLowerCase().includes(query.toLowerCase());
             const matchesDate = !date || apptDate === date;
@@ -750,15 +746,15 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
                         },
                         targetDate: {
                             type: 'string',
-                            description: 'Конкретная дата YYYY-MM-DD (только если пациент назвал число месяца), либо "завтра"/"послезавтра". Для дней недели ("в среду", "в пятницу") — используй поле dayOfWeek, не передавай вычисленную дату сюда.',
+                            description: 'YYYY-MM-DD или "завтра"/"послезавтра". Для дней недели — dayOfWeek.',
                         },
                         dayOfWeek: {
                             type: 'string',
-                            description: 'День недели на русском: "понедельник", "вторник", "среда", "четверг", "пятница", "суббота". ВСЕГДА используй это поле когда пациент говорит "в среду", "в понедельник" и т.п. — сервер сам вычислит правильную дату. НЕ вычисляй дату самостоятельно.',
+                            description: '"понедельник"…"воскресенье" — для слов дня, не вычисляй дату сам.',
                         },
                         nextWeek: {
                             type: 'boolean',
-                            description: 'true — если пациент сказал "следующей недели" или "в следующий [день]".',
+                            description: 'true для "следующей недели" / "в следующий [день]".',
                         },
                     },
                     required: [],
@@ -795,14 +791,14 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
                         speciality: { type: 'string', description: 'Специальность или фамилия врача' },
                         clinicId: { type: 'number', description: 'ID клиники (необязательно)' },
                         clinicName: { type: 'string', description: 'Название клиники (необязательно)' },
-                        date: { type: 'string', description: 'Дата YYYY-MM-DD, "завтра" или "послезавтра". Для дней недели используй поле dayOfWeek. Если пациент говорит "на следующей неделе" без конкретного дня — передай "следующая неделя".' },
-                        dayOfWeek: { type: 'string', description: 'День недели на русском: "понедельник", "вторник", "среда", "четверг", "пятница", "суббота". Используй когда пациент говорит "в понедельник", "в следующий вторник" и т.п. — сервер сам вычислит ближайшую дату этого дня.' },
-                        nextWeek: { type: 'boolean', description: 'true — если пациент сказал "следующей недели" или "в следующий [день]". Сдвигает дату на одну неделю вперёд.' },
-                        time: { type: 'string', description: 'Желаемое время строго в формате HH:MM, например "09:00", "15:30". НЕ передавай сюда слова "утром", "вечером", "утреннее время" — это не валидный формат. Если пациент сказал только "утром" — не передавай time вообще, просто ищи доступные слоты.' },
+                        date: { type: 'string', description: 'YYYY-MM-DD / "завтра" / "послезавтра". Для дней недели — dayOfWeek.' },
+                        dayOfWeek: { type: 'string', description: '"понедельник"…"воскресенье", для слов дня.' },
+                        nextWeek: { type: 'boolean', description: 'true для "следующей недели" / "в следующий [день]".' },
+                        time: { type: 'string', description: 'HH:MM ("09:00"). Не передавай "утром"/"вечером" — фильтруй слоты в ответе.' },
                         mode: {
                             type: 'string',
                             enum: ['nearest', 'day', 'week'],
-                            description: 'Если задан, используется для поиска ближайших слотов (по умолчанию nearest).',
+                            description: 'default nearest.',
                         },
                     },
                     required: ['speciality'],
@@ -821,9 +817,9 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
                         query: { type: 'string', description: 'Имя врача, фамилия или специальность, либо название процедуры' },
                         date: { type: 'string', description: 'Дата записи YYYY-MM-DD' },
                         time: { type: 'string', description: 'Время записи HH:MM' },
-                        dayOfMonth: { type: 'number', description: 'Число месяца (1–31) когда пациент говорит "на 26-е", "26 числа" и т.д. Бэкенд найдёт ближайшую дату с этим числом.' },
-                        dayOfWeek: { type: 'string', description: 'День недели на русском — "понедельник", "вторник" и т.д. Бэкенд автоматически вычислит ближайшую дату этого дня.' },
-                        timeExpression: { type: 'string', description: 'Разговорное время — "9 утра", "6 вечера", "9:30 утра", "14:00" и т.д. Бэкенд переведёт в HH:MM.' },
+                        dayOfMonth: { type: 'number', description: '1–31 для "на 26-е", "26 числа".' },
+                        dayOfWeek: { type: 'string', description: '"понедельник"…"воскресенье".' },
+                        timeExpression: { type: 'string', description: 'Разговорное время — "9 утра", "6 вечера", "9:30 утра".' },
                     },
                     required: [],
                 },
@@ -914,7 +910,7 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
                 else if (resolvedTarget && !/^\d{4}-\d{2}-\d{2}$/.test(resolvedTarget)) {
                     const resolved = resolveRelativeDate(resolvedTarget);
                     if (resolved)
-                        resolvedTarget = toDateStr(resolved);
+                        resolvedTarget = (0, date_utils_1.toDateStr)(resolved);
                 }
                 return this.getAvailableSlots({
                     doctorId: slotArgs.doctorId,
@@ -1068,33 +1064,13 @@ function nearestDayOfMonth(day) {
     if (candidate < today) {
         candidate.setMonth(candidate.getMonth() + 1);
     }
-    return toDateStr(candidate);
+    return (0, date_utils_1.toDateStr)(candidate);
 }
 function nearestWeekdayDate(dayName, weekOffset = 0) {
-    const map = {
-        понедельник: 1, вторник: 2, среда: 3, среду: 3,
-        четверг: 4, пятница: 5, пятницу: 5, суббота: 6, субботу: 6,
-        воскресенье: 0,
-    };
-    const target = map[dayName.toLowerCase().trim()];
-    if (target === undefined)
+    const canonical = (0, date_utils_1.normalizeDayWord)(dayName);
+    if (!canonical || canonical === 'сегодня' || canonical === 'завтра' || canonical === 'послезавтра')
         return null;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const current = today.getDay();
-    let diff = (target - current + 7) % 7;
-    if (diff === 0)
-        diff = 7;
-    diff += weekOffset * 7;
-    const result = new Date(today);
-    result.setDate(today.getDate() + diff);
-    return toDateStr(result);
-}
-function toDateStr(date) {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    return (0, date_utils_1.nextWeekdayDate)(canonical, weekOffset);
 }
 function toTimeStr(date) {
     return date.toTimeString().slice(0, 5);
@@ -1134,22 +1110,20 @@ function resolveRelativeDate(expr) {
         d.setDate(d.getDate() + 2);
         return d;
     }
-    if (/следующ.*недел|next week/.test(s) && !/понедельник|вторник|среда|четверг|пятница|суббота|воскресенье/.test(s)) {
+    const dayInText = (0, date_utils_1.findDayWord)(s);
+    const isNextWeek = /следующ/iu.test(s);
+    if (isNextWeek && !dayInText) {
         const resolved = nearestWeekdayDate('понедельник', 0);
         if (resolved) {
             const [y, m, d] = resolved.split('-').map(Number);
             return new Date(y, m - 1, d);
         }
     }
-    const dayNames = ['воскресенье', 'понедельник', 'вторник', 'среда', 'среду', 'четверг', 'пятница', 'пятницу', 'суббота', 'субботу'];
-    const nextWeekOffset = /следующ/.test(s) ? 1 : 0;
-    for (const name of dayNames) {
-        if (s.includes(name)) {
-            const resolved = nearestWeekdayDate(name, nextWeekOffset);
-            if (resolved) {
-                const [y, m, d] = resolved.split('-').map(Number);
-                return new Date(y, m - 1, d);
-            }
+    if (dayInText) {
+        const resolved = nearestWeekdayDate(dayInText, isNextWeek ? 1 : 0);
+        if (resolved) {
+            const [y, m, d] = resolved.split('-').map(Number);
+            return new Date(y, m - 1, d);
         }
     }
     return null;

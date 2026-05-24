@@ -5,6 +5,8 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { isPlaceholderValue, isMissingPhone, isMissingBirthday } from '../integrations/shared/patient-data-utils';
+import { findDayWord, toDateStr } from '../integrations/shared/date-utils';
 import { OpenAiService } from '../llm/openai.service';
 import { GigaChatService } from '../llm/gigachat.service';
 import { BookingService } from '../booking/booking.service';
@@ -22,7 +24,102 @@ import {
   SessionState,
 } from './chat.types';
 
-const MAX_TOOL_ITERATIONS = 10;
+const MAX_TOOL_ITERATIONS = 6;
+
+// После вызова любого из этих инструментов пациент уже на стадии бронирования —
+// «обзорные» инструменты POST_DISCOVERY_DROP больше не нужны и не отправляются в LLM.
+const DISCOVERY_TOOLS = new Set(['find_doctors_and_slots', 'find_available_at_time', 'find_services']);
+const POST_DISCOVERY_DROP = new Set(['get_clinics', 'find_services']);
+
+// Инструменты-поиски, чьи громоздкие результаты можно убирать из истории
+// после показа сводки/успешной записи — пациент уже выбрал слот.
+const COMPACTABLE_SEARCH_TOOLS = new Set([
+  'find_doctors',
+  'find_doctors_and_slots',
+  'find_services',
+  'get_available_slots',
+  'find_available_at_time',
+  'get_clinics',
+]);
+
+// Инструменты, у которых в схеме есть date/dayOfWeek/nextWeek/mode/targetDate —
+// только их args обрабатывает normalizeDateArgs.
+const DATE_AWARE_TOOLS = new Set([
+  'find_doctors_and_slots',
+  'find_available_at_time',
+  'get_available_slots',
+  'find_patient_appointment',
+]);
+
+/**
+ * Возвращает множество известных дат (YYYY-MM-DD) из результатов search-инструментов
+ * в истории сессии. Используется для валидации `book_appointment.startTime`:
+ * LLM иногда выдумывает дату («написала 29 мая вместо 22 мая») и подставляет её
+ * в startTime — серверная проверка отвергает такие вызовы.
+ */
+function extractValidSlotDates(msgs: ChatMessage[]): Set<string> {
+  const dates = new Set<string>();
+  for (const m of msgs) {
+    if (m.role !== 'function') continue;
+    const name = m.name ?? '';
+    if (!['find_doctors_and_slots', 'find_services', 'get_available_slots', 'find_available_at_time'].includes(name)) continue;
+    try {
+      const parsed = JSON.parse(m.content);
+      const arr = Array.isArray(parsed) ? parsed : (parsed?.available ?? parsed?.nearest ?? []);
+      for (const r of arr) {
+        if (r?.slot?.date) dates.add(r.slot.date);
+        if (r?.date) dates.add(r.date); // get_available_slots возвращает группы с date
+        if (Array.isArray(r?.allSlots)) {
+          for (const s of r.allSlots) {
+            if (s?.date) dates.add(s.date);
+            if (s?.dtSlot?.dt_start) dates.add(String(s.dtSlot.dt_start).slice(0, 10));
+          }
+        }
+      }
+    } catch { /* ignore parse errors */ }
+  }
+  return dates;
+}
+
+/**
+ * Возвращает копию массива сообщений без пар «assistant.function_call(<search>)
+ * → function(<search-result>)». Используется для удаления списков врачей/слотов
+ * из истории, когда они уже не нужны (показана сводка/запись создана).
+ */
+function compactSearchPairs(msgs: ChatMessage[]): ChatMessage[] {
+  const out: ChatMessage[] = [];
+  for (let i = 0; i < msgs.length; i++) {
+    const m = msgs[i];
+    if (
+      m.role === 'assistant' &&
+      m.function_call &&
+      COMPACTABLE_SEARCH_TOOLS.has(m.function_call.name) &&
+      i + 1 < msgs.length &&
+      msgs[i + 1].role === 'function' &&
+      msgs[i + 1].name === m.function_call.name
+    ) {
+      i++;
+      continue;
+    }
+    out.push(m);
+  }
+  return out;
+}
+
+/**
+ * Префикс «свёрнутой» заметки о завершённой записи. На следующем ходе sendMessage
+ * заменяет весь объём диалога одной записи (find_*, book_appointment, summary, "да", success-text)
+ * на одну assistant-заметку этого формата. Данные пациента (session.patient) и список
+ * UUID-ов (session.recentBookings) живут в session-state, не теряются.
+ */
+const BOOKING_NOTE_PREFIX = '[Завершённая запись] ';
+
+/** "2026-05-14T12:00:00" / "2026-05-14 12:00" → "14.05.2026 12:00" */
+function formatRuDateTime(iso: string): string {
+  const m = iso.match(/(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+  if (!m) return iso;
+  return `${m[3]}.${m[2]}.${m[1]} ${m[4]}:${m[5]}`;
+}
 
 // Ключевые слова, указывающие на медицинский симптом / жалобу
 const SYMPTOM_PATTERNS = [
@@ -93,8 +190,101 @@ export class ChatService implements OnModuleInit {
         this.logger.warn(`Failed to decrypt patient data for session ${sessionId}: ${String(err)}`);
       }
     }
+    // Сворачиваем завершённые записи из прошлых ходов в краткие assistant-заметки —
+    // history клиенту прошлого хода уже ушёл целиком, дальше LLM достаточно одной строки на запись.
+    this.foldCompletedBookings(session);
+
     session.messages.push({ role: 'user', content: message });
     session.updatedAt = new Date();
+
+    // Resolve pending confirmation: пользователь ответил "да"/"подтверждаю" после того, как мы спросили.
+    // Серверно исполняем сохранённый вызов — страхует от галлюцинации LLM "оформлено" без реального tool-call.
+    if (session.pendingConfirmation) {
+      const pcfm = session.pendingConfirmation;
+      const trimmed = message.trim();
+      const declined = /^\s*(нет|не\s|не,|отказ|отмен)/i.test(trimmed);
+      // Word-boundary через lookbehind/lookahead кириллицы — иначе «да» matchит «давно», «ок» — «окно» и т.д.
+      const confirmedRe = /(?<![а-яё])(да|подтверждаю|записывайте|запишите|конечно|окей|ок)(?![а-яё])/i;
+
+      if (!declined && confirmedRe.test(trimmed)) {
+        session.pendingConfirmation = undefined;
+
+        let toolResult: unknown;
+        if (pcfm.toolName === 'reschedule_appointment' && !session.misType) {
+          // Local DB: атомарный перенос (cancel+book одной транзакцией).
+          toolResult = await this.booking.rescheduleAppointment({
+            oldId: pcfm.toolArgs.oldId,
+            type: pcfm.toolArgs.type,
+            doctorId: pcfm.toolArgs.doctorId,
+            serviceId: pcfm.toolArgs.serviceId,
+            clinicId: pcfm.toolArgs.clinicId,
+            newStartTime: pcfm.toolArgs.newStartTime,
+            patientId: session.clientId,
+          });
+        } else {
+          toolResult = await this.booking.executeTool(
+            pcfm.toolName,
+            pcfm.toolArgs,
+            sessionId,
+            session.clientId,
+            session.misType ?? undefined,
+            session.clinicNetId,
+            session.townId,
+            session.districtId,
+            session.patient,
+          );
+          if (pcfm.toolName === 'book_appointment') {
+            this.rememberMedflexBooking(session, pcfm.toolArgs, toolResult);
+          } else if (pcfm.toolName === 'cancel_appointment' && pcfm.toolArgs.uuid) {
+            this.forgetMedflexBooking(session, String(pcfm.toolArgs.uuid));
+          }
+        }
+
+        // GigaChat-Pro требует assistant.function_call перед каждым function-результатом.
+        session.messages.push({
+          role: 'assistant',
+          content: '',
+          function_call: { name: pcfm.toolName, arguments: JSON.stringify(pcfm.toolArgs) },
+        });
+        session.messages.push({
+          role: 'function',
+          name: pcfm.toolName,
+          content: JSON.stringify(toolResult),
+        });
+
+        // MedFlex 409: ставим pendingConflict — runToolLoop через системный промпт продолжит диалог.
+        if ((toolResult as any)?.conflict === true && pcfm.toolName === 'book_appointment') {
+          const cr = toolResult as any;
+          session.pendingConflict = {
+            oldId: 0,
+            oldType: 'doctor',
+            oldUuid: cr.existingAppointment?.uuid,
+            existingDescription: cr.existingAppointment?.description,
+            newDoctorId: pcfm.toolArgs.doctorId,
+            newServiceId: pcfm.toolArgs.serviceId,
+            newClinicId: pcfm.toolArgs.clinicId,
+            newStartTime: pcfm.toolArgs.startTime,
+            pendingBookingArgs: cr.pendingBookingArgs,
+          };
+          session.state = 'conflict_resolution';
+        } else if ((toolResult as any)?.success === true) {
+          // Сначала фиксируем заметку (пока search-результаты ещё в истории),
+          // потом компакт. КАНСЕЛ не компактим — после отмены пациент часто
+          // делает следом book_appointment, и search-результаты ещё нужны.
+          const r = toolResult as { uuid?: string };
+          if (pcfm.toolName === 'book_appointment') {
+            if (r.uuid) this.recordCompletedBooking(session, pcfm.toolArgs, r.uuid);
+            this.compactSearchResults(session);
+          } else if (pcfm.toolName === 'reschedule_appointment') {
+            this.compactSearchResults(session);
+          }
+          // cancel_appointment — без компакта.
+        }
+      } else {
+        // Любой другой ответ → отменяем подтверждение, LLM продолжит диалог.
+        session.pendingConfirmation = undefined;
+      }
+    }
 
     // Resolve pending conflict before LLM call, based on user's answer.
     if (session.pendingConflict) {
@@ -109,7 +299,10 @@ export class ChatService implements OnModuleInit {
         if (session.misType === 'medflex' && pc.oldUuid) {
           // MedFlex: cancel old by UUID, then rebook with stored args
           await this.booking.executeTool('cancel_appointment', { uuid: pc.oldUuid }, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
-          rescheduleResult = await this.booking.executeTool('book_appointment', pc.pendingBookingArgs ?? { doctorId: pc.newDoctorId, clinicId: pc.newClinicId, startTime: pc.newStartTime }, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
+          this.forgetMedflexBooking(session, pc.oldUuid);
+          const rebookArgs = pc.pendingBookingArgs ?? { doctorId: pc.newDoctorId, clinicId: pc.newClinicId, startTime: pc.newStartTime };
+          rescheduleResult = await this.booking.executeTool('book_appointment', rebookArgs, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
+          this.rememberMedflexBooking(session, rebookArgs, rescheduleResult);
         } else if (session.misType && session.misType !== 'medflex') {
           // Other external MIS
           await this.booking.executeTool('cancel_appointment', { id: pc.oldId, type: pc.oldType }, sessionId, session.clientId, session.misType, session.clinicNetId, session.townId, session.districtId, session.patient);
@@ -136,14 +329,15 @@ export class ChatService implements OnModuleInit {
       } else if (/оставить|оставь|оставьте|оставим|оставляем|обе|оба|не замен/i.test(message)) {
         session.pendingConflict = undefined;
         session.state = 'idle';
+        const keepBothArgs = pc.pendingBookingArgs ?? {
+          doctorId: pc.newDoctorId,
+          serviceId: pc.newServiceId,
+          clinicId: pc.newClinicId,
+          startTime: pc.newStartTime,
+        };
         const bookResult = await this.booking.executeTool(
           'book_appointment',
-          {
-            doctorId: pc.newDoctorId,
-            serviceId: pc.newServiceId,
-            clinicId: pc.newClinicId,
-            startTime: pc.newStartTime,
-          },
+          keepBothArgs,
           sessionId,
           session.clientId,
           session.misType ?? undefined,
@@ -152,18 +346,46 @@ export class ChatService implements OnModuleInit {
           session.districtId,
           session.patient,
         );
+        this.rememberMedflexBooking(session, keepBothArgs, bookResult);
         // GigaChat-Pro requires assistant function_call before every function result
         session.messages.push({ role: 'assistant', content: '', function_call: { name: 'book_appointment', arguments: JSON.stringify({ doctorId: pc.newDoctorId, clinicId: pc.newClinicId, startTime: pc.newStartTime }) } });
         session.messages.push({ role: 'function', name: 'book_appointment', content: JSON.stringify(bookResult) });
       }
     }
 
-    const tools = this.booking.getTools(session.misType ?? undefined);
+    const tools = this.booking.getTools(session.misType ?? undefined, !!session.patient);
 
     // Build full context with system prompt prepended
     const today = new Date();
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    let systemWithDate = `${this.systemPrompt}\nСегодняшняя дата: ${todayStr}. При указании дат всегда используй формат YYYY-MM-DD с текущим годом.`;
+    const dayNames = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
+    const todayDayName = dayNames[today.getDay()];
+    let systemWithDate =
+      `${this.systemPrompt}\nСегодня: ${todayStr} (${todayDayName}). ` +
+      `Для слов "вторник"/"завтра"/"послезавтра" используй dayOfWeek; date — только для явных дат с числом.`;
+
+    // Гостевой режим MedFlex: пациент не авторизован, операции с существующими записями недоступны.
+    if (session.misType === 'medflex' && !session.patient) {
+      systemWithDate +=
+        `\n\nГОСТЕВОЙ РЕЖИМ MedFlex: операции "мои записи"/"отменить"/"перенести" недоступны — для этого пациенту нужно войти в личный кабинет клиники.`;
+    }
+
+    // MedFlex: данные пациента уже известны — больше не спрашиваем при последующих записях.
+    if (session.misType === 'medflex' && session.patient) {
+      systemWithDate +=
+        `\n\nДанные пациента уже в сессии — не спрашивай повторно. В book_appointment передавай только doctorId, clinicId, specialityId, startTime, endTime, price.`;
+    }
+
+    // MedFlex: записи, созданные в текущей сессии — для отмены/переноса используем
+    // completedBookingNotes (есть doctorName, специальность, услуга, клиника + uuid),
+    // не recentBookings (там только uuid+time).
+    if (session.misType === 'medflex' && session.completedBookingNotes && session.completedBookingNotes.length > 0) {
+      systemWithDate +=
+        `\n\nЗАПИСИ ПАЦИЕНТА В ТЕКУЩЕЙ СЕССИИ:\n` +
+        session.completedBookingNotes.map((n, i) => `${i + 1}. ${n}`).join('\n') +
+        `\nДля отмены/переноса используй uuid НАПРЯМУЮ (без get_patient_appointments). ` +
+        `Если запись одна — используй её uuid без уточнений. Если несколько — выбери правильную по упомянутой пациентом специальности/врачу/услуге.`;
+    }
 
     // Rec 6+7: merge conflict state into the system prompt (GigaChat requires system to be first message only)
     if (session.state === 'conflict_resolution' && session.pendingConflict) {
@@ -246,18 +468,30 @@ export class ChatService implements OnModuleInit {
     tools: ReturnType<BookingService['getTools']>,
     sessionId: string,
   ): Promise<string> {
+    // Если стадия «найти врача со слотом» уже пройдена в предыдущих ходах сессии —
+    // сразу убираем обзорные инструменты, не дожидаясь повторного вызова.
+    let activeTools = session.messages.some(
+      (m) => m.role === 'function' && m.name !== undefined && DISCOVERY_TOOLS.has(m.name),
+    )
+      ? tools.filter((t) => !POST_DISCOVERY_DROP.has(t.name))
+      : tools;
+
     for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
       const isLastIteration = i === MAX_TOOL_ITERATIONS - 1;
       const result =
         session.provider === 'gigachat'
-          ? await this.gigaChat.complete(context, tools, session.model, isLastIteration)
-          : await this.openAi.complete(context, tools, session.model);
+          ? await this.gigaChat.complete(context, activeTools, session.model, isLastIteration)
+          : await this.openAi.complete(context, activeTools, session.model);
 
       this.saveUsage(result.usage, sessionId, session.clinicNetId, session.provider);
 
       if (result.type === 'text') {
         return result.content;
       }
+
+      // Нормализуем даты в args ДО записи в историю — иначе LLM продолжит
+      // оперировать своей же кривой датой ("2026-05-23" вместо "пятница").
+      this.normalizeDateArgs(result.toolName, result.toolArgs, session);
 
       // Tool call — append assistant message with function_call to context and session
       const assistantMsg: ChatMessage = {
@@ -290,15 +524,85 @@ export class ChatService implements OnModuleInit {
         continue;
       }
 
-      // Guard: book_appointment and reschedule_appointment require explicit confirmation
-      // in the last user message of this turn
-      if (result.toolName === 'book_appointment' || result.toolName === 'reschedule_appointment') {
+      // Guard: book_appointment / reschedule_appointment / cancel_appointment require
+      // explicit confirmation в последнем сообщении пользователя. Защита от
+      // случайных отмен и галлюцинаций «успешно оформлено».
+      if (result.toolName === 'book_appointment' || result.toolName === 'reschedule_appointment' || result.toolName === 'cancel_appointment') {
+        // Гостевой MedFlex: данные пациента должны быть СОБРАНЫ у пользователя до вызова book_appointment.
+        // Эта проверка идёт ДО confirmation_required, иначе LLM получает сигнал "спроси подтверждение"
+        // вместо "спроси данные" и продолжает слать плейсхолдеры. Дублирует валидатор в medflex.service.ts
+        // как defense-in-depth.
+        if (
+          result.toolName === 'book_appointment' &&
+          session.misType === 'medflex' &&
+          !session.patient
+        ) {
+          const missing: string[] = [];
+          if (isPlaceholderValue(result.toolArgs.firstName)) missing.push('имя');
+          if (isPlaceholderValue(result.toolArgs.lastName))  missing.push('фамилию');
+          if (isMissingPhone(result.toolArgs.phone))         missing.push('телефон');
+          if (isMissingBirthday(result.toolArgs.birthday))   missing.push('дату рождения');
+          if (missing.length > 0) {
+            const dataMsg: ChatMessage = {
+              role: 'function',
+              name: result.toolName,
+              content: JSON.stringify({
+                success: false,
+                reason: 'patient_data_required',
+                message:
+                  `Данные пациента не получены (${missing.join(', ')}). ` +
+                  `НЕ вызывай book_appointment с плейсхолдерами или пустыми значениями. ` +
+                  `Сначала одним сообщением спроси у пользователя фамилию, имя, отчество, телефон и дату рождения, дождись ответа, ` +
+                  `затем покажи сводку, спроси подтверждение и только после "да" вызывай book_appointment с РЕАЛЬНЫМИ значениями.`,
+              }),
+            };
+            context.push(dataMsg);
+            session.messages.push(dataMsg);
+            continue;
+          }
+        }
+
+        // Bug-fix: LLM иногда выдумывает дату в reply и подставляет её в startTime,
+        // вместо того чтобы взять dtSlot из allSlots. Сравниваем дату startTime
+        // со множеством известных дат слотов из истории. Если не совпадает —
+        // отвергаем и просим взять dtSlot.
+        if (result.toolName === 'book_appointment' && typeof result.toolArgs.startTime === 'string') {
+          const validDates = extractValidSlotDates(session.messages);
+          if (validDates.size > 0) {
+            const reqDate = result.toolArgs.startTime.slice(0, 10);
+            if (!validDates.has(reqDate)) {
+              const dateMsg: ChatMessage = {
+                role: 'function',
+                name: result.toolName,
+                content: JSON.stringify({
+                  success: false,
+                  reason: 'invalid_slot_date',
+                  message:
+                    `Дата startTime "${reqDate}" не соответствует ни одному найденному слоту. ` +
+                    `Доступные даты слотов: ${[...validDates].sort().join(', ')}. ` +
+                    `Возьми startTime/endTime ИЗ dtSlot выбранного слота в allSlots — не вычисляй дату из текста.`,
+                }),
+              };
+              context.push(dateMsg);
+              session.messages.push(dateMsg);
+              continue;
+            }
+          }
+        }
+
         const lastUserMsg = session.messages
           .filter((m) => m.role === 'user')
           .slice(-1)[0]?.content ?? '';
         // Note: \b doesn't work with Cyrillic in JS — check plain substrings
-        const confirmed = /да|подтверждаю|записывайте|запишите|конечно|окей|заменить|замените|(^|\s)ок(\s|[!.,]|$)/i.test(lastUserMsg.trim());
+        // Word-boundary через lookbehind/lookahead кириллицы — иначе «да» matchит «давно», «ок» — «окно» и т.д.
+        const confirmed = /(?<![а-яё])(да|подтверждаю|записывайте|запишите|конечно|окей|заменить|замените|ок)(?![а-яё])/i.test(lastUserMsg.trim());
         if (!confirmed) {
+          // Сохраняем args, чтобы на следующем ходе сервер сам исполнил запись после "да"/"подтверждаю".
+          // Страхует от галлюцинации LLM "успешно оформлено" без реального tool-call.
+          session.pendingConfirmation = {
+            toolName: result.toolName as 'book_appointment' | 'reschedule_appointment' | 'cancel_appointment',
+            toolArgs: { ...result.toolArgs },
+          };
           const blockMsg: ChatMessage = {
             role: 'function',
             name: result.toolName,
@@ -309,6 +613,8 @@ export class ChatService implements OnModuleInit {
           };
           context.push(blockMsg);
           session.messages.push(blockMsg);
+          // LLM на этом ходе покажет сводку и спросит подтверждение — сырые списки слотов больше не нужны.
+          this.compactSearchResults(session, context);
           continue;
         }
 
@@ -366,10 +672,11 @@ export class ChatService implements OnModuleInit {
                 ' Объясни пациенту ситуацию (поле existingAppointment в последнем результате инструмента),' +
                 ' спроси: оставить обе записи или заменить старую на новую? НЕ вызывай инструменты.';
             }
+            // state=conflict_resolution + forceText=true → нужен только текст; tool-схемы не шлём (экономия токенов).
             const textResult =
               session.provider === 'gigachat'
-                ? await this.gigaChat.complete(context, tools, session.model, true)
-                : await this.openAi.complete(context, tools, session.model);
+                ? await this.gigaChat.complete(context, [], session.model, true)
+                : await this.openAi.complete(context, [], session.model);
             this.saveUsage(textResult.usage, sessionId, session.clinicNetId, session.provider);
             return textResult.type === 'text' ? textResult.content : 'Уточните ваш выбор.';
           }
@@ -378,6 +685,26 @@ export class ChatService implements OnModuleInit {
 
       // Execute tool
       const toolResult = await this.booking.executeTool(result.toolName, result.toolArgs, sessionId, session.clientId, session.misType ?? undefined, session.clinicNetId, session.townId, session.districtId, session.patient);
+
+      if (result.toolName === 'book_appointment') {
+        this.rememberMedflexBooking(session, result.toolArgs, toolResult);
+      } else if (result.toolName === 'cancel_appointment' && result.toolArgs.uuid) {
+        this.forgetMedflexBooking(session, String(result.toolArgs.uuid));
+      }
+
+      // Универсальный компакт после успешной записи/переноса (раньше работал только для medflex).
+      const isCompletedBooking =
+        (result.toolName === 'book_appointment' || result.toolName === 'reschedule_appointment') &&
+        (toolResult as any)?.success === true;
+      if (isCompletedBooking) {
+        // Сначала фиксируем заметку (пока в session.messages ещё есть search-результаты
+        // с doctorName/speciality/serviceName/clinicName), потом компакт.
+        const r = toolResult as { uuid?: string };
+        if (r.uuid && result.toolName === 'book_appointment') {
+          this.recordCompletedBooking(session, result.toolArgs, r.uuid);
+        }
+        this.compactSearchResults(session, context);
+      }
 
       // MedFlex 409 conflict: save pending conflict and ask user to choose
       if ((toolResult as any)?.conflict === true && result.toolName === 'book_appointment') {
@@ -410,10 +737,11 @@ export class ChatService implements OnModuleInit {
             ' Предложи два варианта: "заменить" (отменить старую и создать новую) или "выбрать другое время".' +
             ' НЕ вызывай инструменты.';
         }
+        // state=conflict_resolution + forceText=true → нужен только текст; tool-схемы не шлём (экономия токенов).
         const conflictTextResult =
           session.provider === 'gigachat'
-            ? await this.gigaChat.complete(context, tools, session.model, true)
-            : await this.openAi.complete(context, tools, session.model);
+            ? await this.gigaChat.complete(context, [], session.model, true)
+            : await this.openAi.complete(context, [], session.model);
         this.saveUsage(conflictTextResult.usage, sessionId, session.clinicNetId, session.provider);
         return conflictTextResult.type === 'text' ? conflictTextResult.content : 'Уточните ваш выбор.';
       }
@@ -426,6 +754,11 @@ export class ChatService implements OnModuleInit {
       };
       context.push(funcMsg);
       session.messages.push(funcMsg);
+
+      // После успешной discovery-стадии сужаем набор инструментов для следующих итераций.
+      if (DISCOVERY_TOOLS.has(result.toolName)) {
+        activeTools = activeTools.filter((t) => !POST_DISCOVERY_DROP.has(t.name));
+      }
     }
 
     return 'Не удалось обработать запрос. Попробуйте переформулировать.';
@@ -455,6 +788,238 @@ export class ChatService implements OnModuleInit {
       });
     }
     return this.sessions.get(sessionId)!;
+  }
+
+  /**
+   * После успешной записи MedFlex: запоминаем данные пациента и UUID записи в сессии,
+   * чтобы при следующих действиях (новая запись, отмена, перенос) не спрашивать данные снова.
+   */
+  private rememberMedflexBooking(
+    session: SessionData,
+    args: Record<string, any>,
+    result: unknown,
+  ): void {
+    if (session.misType !== 'medflex') return;
+    const r = result as { success?: boolean; uuid?: string };
+    if (!r?.success || !r.uuid) return;
+
+    // Запоминаем данные пациента из аргументов (только если в сессии их ещё нет — авторизованного клиента не перезаписываем)
+    if (!session.patient && args.firstName && args.lastName && args.phone) {
+      session.patient = {
+        firstName: String(args.firstName),
+        lastName: String(args.lastName),
+        secondName: args.secondName ? String(args.secondName) : undefined,
+        phone: String(args.phone),
+        birthday: args.birthday ? String(args.birthday) : '',
+      };
+    }
+
+    if (!session.recentBookings) session.recentBookings = [];
+    if (!session.recentBookings.some((b) => b.uuid === r.uuid)) {
+      session.recentBookings.push({
+        uuid: r.uuid,
+        description: typeof (result as any).message === 'string' ? (result as any).message : '',
+        startTime: String(args.startTime ?? ''),
+      });
+    }
+    // Сам компакт теперь делается в runToolLoop после успешной записи (универсально для всех misType).
+  }
+
+  /**
+   * Подменяет args.date/dayOfWeek/mode по тексту пользователя — LLM плохо считает
+   * календарь и часто ошибается на день/неделю/месяц.
+   *
+   * Покрывает:
+   *   - слово-день («во вторник», «со среды», «по пятницам», «завтра»)
+   *   - «следующая неделя» / «через неделю» — неделя начиная с понедельника / +7 дней
+   *   - «следующий месяц» / «через месяц» — 1-е число / +1 месяц от сегодня
+   */
+  private normalizeDateArgs(toolName: string, args: Record<string, any>, session: SessionData): void {
+    if (!args || typeof args !== 'object') return;
+    if (!DATE_AWARE_TOOLS.has(toolName)) return;
+
+    const lastUser = [...session.messages].reverse().find((m) => m.role === 'user');
+    if (!lastUser?.content) return;
+    const txt = lastUser.content;
+    // get_available_slots использует targetDate, остальные — date.
+    const dateField = toolName === 'get_available_slots' ? 'targetDate' : 'date';
+    const otherDateField = dateField === 'date' ? 'targetDate' : 'date';
+
+    // (1) Слово-день («во вторник», «со среды», «завтра»). Покрывает все падежи + аббревиатуры.
+    const canonical = findDayWord(txt);
+    if (canonical) {
+      args.dayOfWeek = canonical;
+      delete args.date;
+      delete args.targetDate;
+      if (/следующ/iu.test(txt)) args.nextWeek = true;
+      this.logger.debug(`normalizeDateArgs: dayOfWeek="${canonical}"`);
+      return;
+    }
+
+    // (2) «Следующая неделя» / «в начале недели» (без конкретного дня) —
+    // вся неделя с понедельника.
+    if (/следующ[а-яё]*\s+недел/iu.test(txt) || /начал[а-яё]*\s+недел/iu.test(txt)) {
+      delete args.date;
+      delete args.targetDate;
+      args.dayOfWeek = 'понедельник';
+      args.nextWeek = true;
+      args.mode = 'week';
+      this.logger.debug('normalizeDateArgs: next-week / начало недели → week from Monday');
+      return;
+    }
+
+    // (2b) «В конце недели» — ближайшая пятница, режим недели.
+    if (/конц[а-яё]*\s+недел/iu.test(txt)) {
+      delete args.date;
+      delete args.targetDate;
+      args.dayOfWeek = 'пятница';
+      args.mode = 'week';
+      this.logger.debug('normalizeDateArgs: конец недели → nearest Friday + week mode');
+      return;
+    }
+
+    // (3) «Через неделю» — +7 дней от сегодня, режим недели.
+    if (/через\s+недел/iu.test(txt)) {
+      const d = new Date();
+      d.setDate(d.getDate() + 7);
+      d.setHours(0, 0, 0, 0);
+      const iso = toDateStr(d);
+      delete args.dayOfWeek;
+      delete args.nextWeek;
+      delete args[otherDateField];
+      args[dateField] = iso;
+      args.mode = 'week';
+      this.logger.debug(`normalizeDateArgs: in one week → ${iso}`);
+      return;
+    }
+
+    // (4) «Следующий месяц» — 1-е число следующего месяца, режим недели.
+    if (/следующ[а-яё]*\s+месяц/iu.test(txt)) {
+      const d = new Date();
+      d.setMonth(d.getMonth() + 1, 1);
+      d.setHours(0, 0, 0, 0);
+      const iso = toDateStr(d);
+      delete args.dayOfWeek;
+      delete args.nextWeek;
+      delete args[otherDateField];
+      args[dateField] = iso;
+      args.mode = 'week';
+      this.logger.debug(`normalizeDateArgs: next month → ${iso}`);
+      return;
+    }
+
+    // (5) «Через месяц» — сегодня + 1 месяц, режим недели.
+    if (/через\s+месяц/iu.test(txt)) {
+      const d = new Date();
+      d.setMonth(d.getMonth() + 1);
+      d.setHours(0, 0, 0, 0);
+      const iso = toDateStr(d);
+      delete args.dayOfWeek;
+      delete args.nextWeek;
+      delete args[otherDateField];
+      args[dateField] = iso;
+      args.mode = 'week';
+      this.logger.debug(`normalizeDateArgs: in one month → ${iso}`);
+      return;
+    }
+  }
+
+  /** Удаляет запись из recentBookings по uuid (после отмены). */
+  private forgetMedflexBooking(session: SessionData, uuid: string): void {
+    if (!session.recentBookings) return;
+    session.recentBookings = session.recentBookings.filter((b) => b.uuid !== uuid);
+  }
+
+  /**
+   * Удаляет пары «assistant.function_call(<поиск>) → function(<результат>)» из
+   * истории сессии и (опционально) из активного контекста LLM. Триггеры:
+   *   1) показ сводки с подтверждением (book_appointment/reschedule_appointment
+   *      заблокирован на confirmation_required) — пациент выбрал слот, сырые
+   *      списки больше не нужны.
+   *   2) успешная запись/перенос — данные о записи уже сохранены отдельно.
+   */
+  private compactSearchResults(session: SessionData, context?: ChatMessage[]): void {
+    session.messages = compactSearchPairs(session.messages);
+    if (context) {
+      const compacted = compactSearchPairs(context);
+      context.length = 0;
+      context.push(...compacted);
+    }
+  }
+
+  /**
+   * Строит компактную заметку о завершённой записи. Извлекает ФИО, специальность,
+   * услугу (если запись на услугу) и клинику из последнего find_doctors_and_slots
+   * / find_services результата в истории. Вызывается ДО compactSearchResults,
+   * чтобы поиск ещё был доступен.
+   *
+   * Включает ID-поля (doctorId/clinicId/specialityId/price) — нужны для повторного
+   * вызова book_appointment / reschedule_appointment в той же сессии.
+   */
+  private buildBookingNote(session: SessionData, args: Record<string, any>, uuid: string): string {
+    let doctorName = `Врач #${args.doctorId}`;
+    let speciality = '';
+    let serviceName = '';
+    let clinicName = '';
+    for (let i = session.messages.length - 1; i >= 0; i--) {
+      const m = session.messages[i];
+      if (m.role !== 'function') continue;
+      if (m.name !== 'find_doctors_and_slots' && m.name !== 'find_services') continue;
+      try {
+        const arr = JSON.parse(m.content);
+        if (!Array.isArray(arr)) continue;
+        const match = arr.find((r: any) => r.doctorId === args.doctorId);
+        if (!match) continue;
+        if (match.doctorName) doctorName = String(match.doctorName);
+        if (match.speciality)  speciality  = String(match.speciality);
+        if (m.name === 'find_services' && match.serviceName) {
+          serviceName = String(match.serviceName);
+        }
+        if (match.slot?.clinicName) clinicName = String(match.slot.clinicName);
+        break;
+      } catch { /* ignore parse errors */ }
+    }
+    const dt = formatRuDateTime(String(args.startTime ?? ''));
+    const parts = [dt, doctorName];
+    if (speciality)  parts.push(speciality);
+    if (serviceName) parts.push(serviceName);
+    if (clinicName)  parts.push(clinicName);
+    // ID-поля в конце — для повторных вызовов LLM (отмена/перенос).
+    const idFields = [
+      `uuid=${uuid}`,
+      args.doctorId ? `doctorId=${args.doctorId}` : '',
+      args.clinicId ? `clinicId=${args.clinicId}` : '',
+      args.specialityId ? `specialityId=${args.specialityId}` : '',
+      args.price !== undefined ? `price=${args.price}` : '',
+    ].filter(Boolean).join(', ');
+    return `${BOOKING_NOTE_PREFIX}${parts.join(', ')}. ${idFields}`;
+  }
+
+  /**
+   * Записывает факт успешной записи: строит заметку из ТЕКУЩЕЙ истории
+   * (search-результаты ещё в session.messages — оттуда берутся ФИО/специальность/услуга/клиника)
+   * и кладёт в session.completedBookingNotes. Вызывается ДО compactSearchResults.
+   */
+  private recordCompletedBooking(session: SessionData, args: Record<string, any>, uuid: string): void {
+    if (!session.completedBookingNotes) session.completedBookingNotes = [];
+    if (session.completedBookingNotes.some((n) => n.includes(uuid))) return;
+    session.completedBookingNotes.push(this.buildBookingNote(session, args, uuid));
+  }
+
+  /**
+   * Сворачивает session.messages до набора заметок о завершённых записях.
+   * Запускается в начале sendMessage. Срабатывает только когда есть НОВЫЕ заметки
+   * (по сравнению с уже свёрнутыми) — чтобы не уничтожить in-progress booking flow.
+   *
+   * session.patient, session.recentBookings, session.clientId — в session-state,
+   * пациент данные повторно не вводит.
+   */
+  private foldCompletedBookings(session: SessionData): void {
+    const notes = session.completedBookingNotes ?? [];
+    const folded = session.foldedNotesCount ?? 0;
+    if (notes.length <= folded) return;
+    session.messages = notes.map((content) => ({ role: 'assistant' as const, content }));
+    session.foldedNotesCount = notes.length;
   }
 
   /** Сохраняет использование токенов в БД (fire-and-forget, не блокирует ответ). */

@@ -35,9 +35,9 @@ let BookingService = BookingService_1 = class BookingService {
     rescheduleAppointment(params) {
         return this.localDbService.rescheduleAppointment(params);
     }
-    getTools(misType) {
+    getTools(misType, hasPatient) {
         if (misType === 'medflex')
-            return this.medflexService.getTools();
+            return this.medflexService.getTools(hasPatient);
         return this.localDbService.getTools();
     }
     async executeTool(name, args, _sessionId, clientId, misType, clinicNetId, townId, districtId, patient) {

@@ -41,7 +41,7 @@ export interface ServiceInfo {
 }
 export interface SlotGroup {
     date: string;
-    dayName: string;
+    dateLabel: string;
     clinicId: number;
     clinicName: string;
     times: string[];
@@ -50,6 +50,7 @@ export interface SlotGroup {
 export interface BookingResult {
     success: boolean;
     appointmentId?: number;
+    uuid?: string;
     message: string;
 }
 export interface PatientAppointmentItem {
@@ -116,11 +117,7 @@ export declare class LocalDbService {
         doctorId: number;
         doctorName: string;
         speciality: string;
-        clinicId?: number;
-        clinicName?: string;
         isAvailable: boolean;
-        requestedDate?: string;
-        requestedTime?: string;
         slot?: {
             date: string;
             time: string;

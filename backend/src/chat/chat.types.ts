@@ -69,6 +69,17 @@ export interface SendMessageResponse {
   history: ChatMessage[];
 }
 
+/**
+ * Сохранённый вызов book_appointment / reschedule_appointment, который был
+ * заблокирован guard'ом «confirmation_required». На следующем ходе, если
+ * пользователь сказал «да»/«подтверждаю», сервер сам исполнит этот вызов
+ * — это страхует от галлюцинации LLM «успешно оформлено» без реального tool-call.
+ */
+export interface PendingConfirmation {
+  toolName: 'book_appointment' | 'reschedule_appointment' | 'cancel_appointment';
+  toolArgs: Record<string, any>;
+}
+
 export interface PendingConflict {
   /** ID записи в локальной БД (только для local mis). */
   oldId: number;
@@ -108,7 +119,26 @@ export interface SessionData {
    * phone используется как patient_id в MedFlex.
    */
   patient?: PatientData;
+  /**
+   * UUID-ы записей, созданных в текущей сессии (только MedFlex).
+   * Хранятся для быстрой отмены/переноса без дополнительного `get_patient_appointments`.
+   */
+  recentBookings?: Array<{ uuid: string; description: string; startTime: string }>;
   pendingConflict?: PendingConflict;
+  /**
+   * Сохранённые args вызова book/reschedule, ожидающего подтверждения.
+   * Снимается на следующем ходе: либо сервер исполняет (если "да"), либо отменяется (любой другой ответ).
+   */
+  pendingConfirmation?: PendingConfirmation;
+  /**
+   * Заметки о завершённых записях формата [Завершённая запись] …
+   * Строятся в момент book_appointment.success (когда search-результаты ещё
+   * в session.messages — оттуда берутся ФИО, специальность, услуга, клиника).
+   * foldCompletedBookings заменяет ими session.messages на следующем ходе.
+   */
+  completedBookingNotes?: string[];
+  /** Сколько заметок уже свёрнуто в session.messages — fold не повторяется без новых записей. */
+  foldedNotesCount?: number;
   state: SessionState;
   createdAt: Date;
   updatedAt: Date;

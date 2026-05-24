@@ -11,7 +11,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { LlmTool } from '../../llm/llm.types';
 import { MedflexClient } from './medflex.client';
-import { MfSpeciality, MfLpu, MfDoctor } from './medflex.types';
+import { MfSpeciality, MfLpu, MfDoctor, MfService } from './medflex.types';
 import {
   ClinicInfo,
   DoctorInfo,
@@ -22,6 +22,9 @@ import {
   SlotMode,
 } from '../../booking/booking.service';
 import { PatientData } from '../../chat/chat.types';
+import { toDateStr, parseFlexibleDate, normalizeDayWord, formatRuDateLabel, nextWeekdayDate } from '../shared/date-utils';
+import { normalizeRuPhone } from '../shared/phone-utils';
+import { isPlaceholderValue, isMissingPhone, isMissingBirthday } from '../shared/patient-data-utils';
 
 // ── Кэш специальностей ────────────────────────────────────────────────────────
 
@@ -35,7 +38,6 @@ interface LpuCache {
   fetchedAt: number;
 }
 
-const DAY_NAMES = ['', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
 const SPECIALITY_TTL_MS = 60 * 60 * 1000; // 60 мин
 const LPU_TTL_MS = 10 * 60 * 1000;        // 10 мин
 
@@ -51,54 +53,93 @@ export class MedflexService {
 
   // ── LLM инструменты ──────────────────────────────────────────────────────────
 
-  getTools(): LlmTool[] {
-    return [
+  /**
+   * @param hasPatient true — пациент авторизован (есть session.patient).
+   *                   false/undefined — гостевой режим: данные пациента собираем у пользователя при записи,
+   *                   операции с существующими записями (поиск/отмена) недоступны.
+   */
+  getTools(hasPatient?: boolean): LlmTool[] {
+    const tools: LlmTool[] = [
       {
         name: 'get_clinics',
-        description: 'Возвращает список клиник сети. Вызывай когда нужно узнать ID клиники или предложить выбор.',
+        description: 'Список клиник сети.',
         parameters: { type: 'object', properties: {}, required: [] },
       },
       {
         name: 'find_doctors',
         description:
-          'Находит врачей по специальности или фамилии. ' +
-          'Возвращает список с id, name, speciality, specialityId, price, clinics. ' +
-          'specialityId нужен при записи (book_appointment). ' +
-          'Если пользователь называет фамилию — передавай её в поле speciality.',
+          'Поиск врачей по специальности или фамилии (поле speciality). ' +
+          'Возвращает id, name, speciality, specialityId, price, clinics. ' +
+          'specialityId нужен для book_appointment.',
         parameters: {
           type: 'object',
           properties: {
-            speciality: { type: 'string', description: 'Специальность или фамилия, например "терапевт", "Иванова"' },
-            clinicId:   { type: 'number', description: 'ID клиники (lpu_id) для фильтрации (необязательно)' },
+            speciality: { type: 'string', description: 'Специальность или фамилия ("терапевт", "Иванова")' },
+            clinicId:   { type: 'number', description: 'ID клиники (lpu_id), опционально' },
           },
           required: ['speciality'],
         },
       },
       {
-        name: 'get_available_slots',
+        name: 'find_doctors_and_slots',
         description:
-          'Возвращает свободные слоты для записи к врачу. ' +
-          'СТОП — doctorId и clinicId ОБЯЗАТЕЛЬНО должны быть получены из предыдущего вызова find_doctors. ' +
-          'НИКОГДА не передавай doctorId/clinicId, если не вызывал find_doctors в этой сессии. ' +
-          'Каждый слот содержит date, dayName, clinicId, clinicName, times (массив), dtSlots (массив объектов с dt_start/dt_end). ' +
-          'dtSlots нужен для book_appointment (startTime и endTime). ' +
-          'Режимы: nearest — ближайший день со слотами (по умолчанию); ' +
-          'day — конкретная дата (передавай targetDate или dayOfWeek); ' +
-          'week — неделя от targetDate. ' +
-          'Для режима nearest НЕ передавай targetDate — сервер найдёт ближайший день сам.',
+          'Поиск врачей по СПЕЦИАЛЬНОСТИ или ФАМИЛИИ + ближайшие слоты. Используй для "к терапевту", "к Ивановой". ' +
+          'НЕ используй для конкретных процедур ("УЗИ сердца", "пилинг") — для них find_services. ' +
+          'Возвращает doctorId, doctorName, speciality, specialityId, price, slot{date,time,clinicId,clinicName}; при mode=day также allSlots. ' +
+          'Для слов "вторник"/"завтра" используй dayOfWeek, НЕ date.',
         parameters: {
           type: 'object',
           properties: {
-            doctorId:   { type: 'number', description: 'ID врача — ТОЛЬКО из результата find_doctors, не придумывай' },
-            clinicId:   { type: 'number', description: 'ID клиники (lpu_id) — ТОЛЬКО из результата find_doctors, не придумывай' },
+            speciality: { type: 'string', description: 'Специальность или фамилия' },
+            clinicId:   { type: 'number', description: 'ID клиники, опционально' },
+            date:       { type: 'string', description: 'YYYY-MM-DD — только для явных дат с числом' },
+            dayOfWeek:  { type: 'string', description: '"понедельник"…"воскресенье" / "сегодня"/"завтра"/"послезавтра"' },
+            nextWeek:   { type: 'boolean', description: 'true для "следующей недели"' },
             mode: {
               type: 'string',
               enum: ['nearest', 'day', 'week'],
-              description: 'nearest — ближайшее окно, day — конкретный день, week — неделя',
+              description: 'nearest (по умолч.) / day / week',
             },
-            targetDate: { type: 'string', description: 'Дата YYYY-MM-DD (для режима day или week). Не передавай для nearest.' },
-            dayOfWeek:  { type: 'string', description: 'День недели или относительная дата ("завтра", "послезавтра", "понедельник" и т.п.) — сервер вычислит дату' },
-            nextWeek:   { type: 'boolean', description: 'true — если пациент сказал "следующей недели"' },
+          },
+          required: ['speciality'],
+        },
+      },
+      {
+        name: 'find_services',
+        description:
+          'Поиск медицинской УСЛУГИ (процедуры, исследования) по названию: "УЗИ сердца", "пилинг", "ботокс", "чистка лица". ' +
+          'Используй ВМЕСТО find_doctors_and_slots, когда пациент называет процедуру/исследование, а не специальность врача. ' +
+          'Возвращает: serviceId, serviceName, duration, price (цена услуги), doctorId, doctorName, speciality, specialityId, slot{date,time,clinicId,clinicName}. ' +
+          'Для записи в book_appointment передавай specialityId (специальность врача из этого результата) и price (цена услуги).',
+        parameters: {
+          type: 'object',
+          properties: {
+            query:    { type: 'string', description: 'Название услуги или часть ("УЗИ сердца", "пилинг")' },
+            clinicId: { type: 'number', description: 'ID клиники, опционально' },
+          },
+          required: ['query'],
+        },
+      },
+      {
+        name: 'get_available_slots',
+        description:
+          'Слоты конкретного врача (doctorId уже известен). Если только специальность — используй find_doctors_and_slots. ' +
+          'doctorId/clinicId бери ТОЛЬКО из find_doctors. ' +
+          'Возвращает date, dateLabel ("Сегодня"/"Завтра"/"Послезавтра"/"Вторник, 26 мая"), clinicId, clinicName, times, dtSlots (нужен для startTime/endTime в book_appointment). ' +
+          'Режимы: nearest (по умолч., ≤5 ближайших) / day (ВСЕ слоты конкретной даты — используй когда пациент назвал конкретное время или хочет видеть весь день) / week.',
+        parameters: {
+          type: 'object',
+          properties: {
+            doctorId:   { type: 'number', description: 'ID врача из find_doctors' },
+            clinicId:   { type: 'number', description: 'ID клиники из find_doctors' },
+            mode: {
+              type: 'string',
+              enum: ['nearest', 'day', 'week'],
+              description: 'nearest / day / week',
+            },
+            targetDate: { type: 'string', description: 'YYYY-MM-DD (для day/week)' },
+            dayOfWeek:  { type: 'string', description: '"понедельник"…/"завтра"/"послезавтра"' },
+            nextWeek:   { type: 'boolean', description: 'true для "следующей недели"' },
           },
           required: ['doctorId', 'clinicId'],
         },
@@ -106,60 +147,90 @@ export class MedflexService {
       {
         name: 'book_appointment',
         description:
-          'Записывает пациента к врачу. ' +
-          'СТОП — НЕ вызывай пока пациент не произнёс явное подтверждение: "да", "подтверждаю", "записывайте". ' +
-          'Перед записью выведи сводку (врач, дата, время, клиника, стоимость) и спроси "Подтверждаете запись?". ' +
-          'startTime и endTime берутся из поля dtSlots результата get_available_slots (dt_start и dt_end). ' +
-          'specialityId берётся из результата find_doctors. ' +
-          'price берётся из результата find_doctors (поле price). ' +
-          'Для записи ОБЯЗАТЕЛЬНО нужны данные пациента — спроси их перед подтверждением если не известны.',
+          'Создаёт запись. Вызывай ТОЛЬКО после явного "да"/"подтверждаю". ' +
+          'Перед вызовом покажи сводку (врач, дата, время, клиника) и спроси "Подтверждаете запись?". ' +
+          'Стоимость в сводке НЕ упоминай, если пациент о цене не спрашивал. ' +
+          'startTime/endTime — из dtSlots. specialityId и price — из find_doctors_and_slots (для приёма врача) ИЛИ find_services (для процедуры; там price = цена услуги). ' +
+          (hasPatient
+            ? 'Данные пациента известны — не спрашивай и не передавай ФИО/телефон/дату рождения.'
+            : 'Гостевой режим (данных пациента нет): (1) спроси одним сообщением фамилию, имя, отчество, телефон, дату рождения; ' +
+              '(2) дождись ответа; (3) покажи сводку и спроси подтверждение; (4) только после "да" вызывай с РЕАЛЬНЫМИ значениями. ' +
+              'Запрещено передавать плейсхолдеры ({FIRST_NAME}, <PHONE> и т.п.) или пустые строки. ' +
+              'В сводке "Врач" — из find_doctors, НЕ имя пациента.'),
         parameters: {
           type: 'object',
           properties: {
             doctorId:     { type: 'number', description: 'ID врача' },
-            clinicId:     { type: 'number', description: 'ID клиники (lpu_id)' },
-            specialityId: { type: 'number', description: 'ID специальности из find_doctors' },
-            startTime:    { type: 'string', description: 'Начало приёма из dtSlots.dt_start, формат "YYYY-MM-DD HH:MM"' },
-            endTime:      { type: 'string', description: 'Конец приёма из dtSlots.dt_end, формат "YYYY-MM-DD HH:MM"' },
-            price:        { type: 'number', description: 'Стоимость приёма из find_doctors' },
+            clinicId:     { type: 'number', description: 'ID клиники' },
+            specialityId: { type: 'number', description: 'ID специальности из find_doctors_and_slots / find_services' },
+            startTime:    { type: 'string', description: 'dtSlots.dt_start, "YYYY-MM-DD HH:MM"' },
+            endTime:      { type: 'string', description: 'dtSlots.dt_end, "YYYY-MM-DD HH:MM"' },
+            price:        { type: 'number', description: 'Цена из find_doctors_and_slots (приём) или find_services (процедура)' },
             firstName:    { type: 'string', description: 'Имя пациента' },
             lastName:     { type: 'string', description: 'Фамилия пациента' },
-            secondName:   { type: 'string', description: 'Отчество пациента (пустая строка если нет)' },
-            phone:        { type: 'string', description: 'Телефон пациента: 79001234567 (11 цифр без пробелов и знаков)' },
-            birthday:     { type: 'string', description: 'Дата рождения пациента YYYY-MM-DD' },
-            comment:      { type: 'string', description: 'Комментарий к записи (необязательно)' },
+            secondName:   { type: 'string', description: 'Отчество (или пустая строка)' },
+            phone:        { type: 'string', description: 'Телефон в любом формате (сервер нормализует)' },
+            birthday:     { type: 'string', description: 'Дата рождения в любом формате ("1 января 1983", "01.01.1983")' },
+            comment:      { type: 'string', description: 'Комментарий, опционально' },
           },
-          required: ['doctorId', 'clinicId', 'specialityId', 'startTime', 'endTime', 'price', 'firstName', 'lastName', 'phone', 'birthday'],
-        },
-      },
-      {
-        name: 'cancel_appointment',
-        description:
-          'Отменяет запись пациента. Вызывай ТОЛЬКО после явного подтверждения отмены. ' +
-          'ID записи (uuid) берётся из результата get_patient_appointments.',
-        parameters: {
-          type: 'object',
-          properties: {
-            uuid: { type: 'string', description: 'UUID записи из get_patient_appointments' },
-          },
-          required: ['uuid'],
-        },
-      },
-      {
-        name: 'get_patient_appointments',
-        description:
-          'Возвращает предстоящие и прошедшие записи пациента по номеру телефона. ' +
-          'ОБЯЗАТЕЛЬНО вызывай когда пациент говорит "мои записи", "покажи записи", "когда я записан" и т.п. ' +
-          'Если телефон пациента неизвестен — спроси его.',
-        parameters: {
-          type: 'object',
-          properties: {
-            phone: { type: 'string', description: 'Телефон пациента: 79001234567' },
-          },
-          required: ['phone'],
+          required: hasPatient
+            ? ['doctorId', 'clinicId', 'specialityId', 'startTime', 'endTime', 'price']
+            : ['doctorId', 'clinicId', 'specialityId', 'startTime', 'endTime', 'price', 'firstName', 'lastName', 'phone', 'birthday'],
         },
       },
     ];
+
+    // Инструменты, требующие идентификации пациента — добавляем только если пациент авторизован.
+    if (hasPatient) {
+      tools.push(
+        {
+          name: 'cancel_appointment',
+          description: 'Отмена записи. Вызывай только после подтверждения. uuid — из get_patient_appointments.',
+          parameters: {
+            type: 'object',
+            properties: {
+              uuid: { type: 'string', description: 'UUID записи' },
+            },
+            required: ['uuid'],
+          },
+        },
+        {
+          name: 'reschedule_appointment',
+          description:
+            'Атомарный перенос: отменяет старую запись и создаёт новую за один вызов. ' +
+            'Используй для любого «перенеси/перепиши на другую дату/время». Вызывай ТОЛЬКО после явного "да"/"подтверждаю". ' +
+            'oldUuid — UUID старой записи (из истории сессии). Остальные параметры — для новой записи из find_doctors_and_slots/find_services.',
+          parameters: {
+            type: 'object',
+            properties: {
+              oldUuid:      { type: 'string', description: 'UUID старой записи' },
+              doctorId:     { type: 'number', description: 'ID врача новой записи' },
+              clinicId:     { type: 'number', description: 'ID клиники' },
+              specialityId: { type: 'number', description: 'ID специальности' },
+              startTime:    { type: 'string', description: 'dtSlot.dt_start новой записи' },
+              endTime:      { type: 'string', description: 'dtSlot.dt_end' },
+              price:        { type: 'number', description: 'Цена' },
+            },
+            required: ['oldUuid', 'doctorId', 'clinicId', 'specialityId', 'startTime', 'endTime', 'price'],
+          },
+        },
+        {
+          name: 'get_patient_appointments',
+          description:
+            'Записи пациента по телефону. Вызывай для "мои записи", "когда я записан". ' +
+            'Если телефон неизвестен — спроси.',
+          parameters: {
+            type: 'object',
+            properties: {
+              phone: { type: 'string', description: 'Телефон, 79XXXXXXXXX' },
+            },
+            required: ['phone'],
+          },
+        },
+      );
+    }
+
+    return tools;
   }
 
   // ── Маршрутизатор tool-вызовов ────────────────────────────────────────────────
@@ -185,6 +256,12 @@ export class MedflexService {
 
     const client = new MedflexClient(apiKey);
 
+    // В гостевом режиме блокируем операции, требующие идентификатор пациента (телефон).
+    // cancel_appointment по uuid допускается — он используется внутри сервиса при разрешении конфликтов.
+    if (!patient && (name === 'get_patient_appointments' || name === 'find_patient_appointment')) {
+      return { error: 'Для работы с существующими записями нужно войти в личный кабинет на сайте клиники.' };
+    }
+
     try {
       switch (name) {
         case 'get_clinics':
@@ -194,30 +271,38 @@ export class MedflexService {
           return this.findDoctors(client, args.speciality, lpuGroupId, args.clinicId, townId);
 
         case 'find_services':
-          // MedFlex не поддерживает отдельный поиск услуг — они входят в специальности
-          return [];
+          return this.findServices(client, {
+            query: args.query,
+            lpuGroupId,
+            clinicId: args.clinicId,
+            townId,
+          });
 
         case 'get_available_slots': {
-          // Резолвим день недели / относительную дату на стороне сервера
+          // dayOfWeek имеет приоритет над targetDate: если LLM ошиблась с YYYY-MM-DD,
+          // серверный резолвер пересчитает дату корректно от слова дня.
           let targetDate: string | undefined = args.targetDate;
-          if (args.dayOfWeek && !targetDate) {
-            targetDate = resolveRelativeOrWeekday(args.dayOfWeek, args.nextWeek ? 1 : 0) ?? undefined;
+          if (args.dayOfWeek) {
+            targetDate = resolveRelativeOrWeekday(args.dayOfWeek, args.nextWeek ? 1 : 0) ?? targetDate;
           }
           return this.getAvailableSlots(client, {
             doctorId: args.doctorId,
             clinicId: args.clinicId,
             lpuGroupId,
-            mode: args.mode ?? 'nearest',
+            // Если есть конкретная дата — по умолчанию режим 'day' (все слоты).
+            // mode='nearest' имеет смысл только без targetDate.
+            mode: args.mode ?? (targetDate ? 'day' : 'nearest'),
             targetDate,
             townId,
           });
         }
 
         case 'find_doctors_and_slots': {
-          // Объединённый поиск врачей + слотов
+          // dayOfWeek имеет приоритет над date: если LLM ошиблась с YYYY-MM-DD,
+          // серверный резолвер пересчитает дату корректно от слова дня.
           let targetDate: string | undefined = args.date;
-          if (args.dayOfWeek && !targetDate) {
-            targetDate = resolveRelativeOrWeekday(args.dayOfWeek, args.nextWeek ? 1 : 0) ?? undefined;
+          if (args.dayOfWeek) {
+            targetDate = resolveRelativeOrWeekday(args.dayOfWeek, args.nextWeek ? 1 : 0) ?? targetDate;
           }
           return this.findDoctorsAndSlots(client, {
             speciality: args.speciality,
@@ -230,14 +315,37 @@ export class MedflexService {
         }
 
         case 'book_appointment': {
-          // Автозаполняем данные пациента из сессии, если не переданы в args
+          // Данные пациента — единственный источник истины session.patient.
+          // ПЕРЕЗАПИСЫВАЕМ (не autofill), даже если LLM что-то передала: при повторной
+          // записи LLM иногда сочиняет ФИО/телефон. Server — source of truth.
           const bookArgs = { ...args };
           if (patient) {
-            if (!bookArgs.firstName)   bookArgs.firstName   = patient.firstName;
-            if (!bookArgs.lastName)    bookArgs.lastName    = patient.lastName;
-            if (!bookArgs.secondName)  bookArgs.secondName  = patient.secondName;
-            if (!bookArgs.phone)       bookArgs.phone       = patient.phone;
-            if (!bookArgs.birthday)    bookArgs.birthday    = patient.birthday;
+            bookArgs.firstName  = patient.firstName;
+            bookArgs.lastName   = patient.lastName;
+            bookArgs.secondName = patient.secondName;
+            bookArgs.phone      = patient.phone;
+            bookArgs.birthday   = patient.birthday;
+          }
+          // Гостевой режим: проверяем, что LLM реально получил данные от пациента,
+          // а не подставил плейсхолдеры (`{ИМЯ}`, `<PHONE>`) или лейбл-слова («Имя», «Телефон»).
+          // Дублирует ранний guard в chat.service.ts как defense-in-depth.
+          if (!patient) {
+            const missing: string[] = [];
+            if (isPlaceholderValue(bookArgs.firstName)) missing.push('имя');
+            if (isPlaceholderValue(bookArgs.lastName))  missing.push('фамилию');
+            if (isMissingPhone(bookArgs.phone))         missing.push('телефон');
+            if (isMissingBirthday(bookArgs.birthday))   missing.push('дату рождения');
+            if (missing.length > 0) {
+              return {
+                success: false,
+                reason: 'patient_data_required',
+                message:
+                  `Данные пациента не получены (${missing.join(', ')}). ` +
+                  `НЕ вызывай book_appointment повторно с плейсхолдерами или пустыми значениями. ` +
+                  `Сначала спроси у пользователя одним сообщением: фамилию, имя, отчество, телефон и дату рождения. ` +
+                  `Только после ответа пользователя вызови book_appointment снова, подставив реальные значения.`,
+              };
+            }
           }
           try {
             return await this.bookAppointment(client, bookArgs as any);
@@ -265,13 +373,53 @@ export class MedflexService {
           if (!args.uuid) return { error: 'UUID записи не указан.' };
           return this.cancelAppointment(client, args.uuid);
 
-        case 'get_patient_appointments':
-          if (!args.phone) return { error: 'Номер телефона не указан. Пожалуйста, попроси пациента назвать телефон.' };
-          return this.getPatientAppointments(client, args.phone, lpuGroupId);
+        case 'reschedule_appointment': {
+          // Атомарный перенос: cancel(old) → book(new).
+          if (!args.oldUuid) return { success: false, message: 'oldUuid обязателен' };
+          if (!patient) return { success: false, message: 'Данные пациента в сессии отсутствуют — нельзя перенести запись без них.' };
+          try {
+            await this.cancelAppointment(client, String(args.oldUuid));
+          } catch (e: any) {
+            return { success: false, message: `Не удалось отменить старую запись: ${e?.message ?? e}` };
+          }
+          // После отмены — создаём новую с данными пациента из сессии.
+          const bookArgs = {
+            doctorId: args.doctorId,
+            clinicId: args.clinicId,
+            specialityId: args.specialityId,
+            startTime: args.startTime,
+            endTime: args.endTime,
+            price: args.price,
+            firstName: patient.firstName,
+            lastName: patient.lastName,
+            secondName: patient.secondName ?? '',
+            phone: patient.phone,
+            birthday: patient.birthday,
+          };
+          try {
+            const bookResult = await this.bookAppointment(client, bookArgs as any);
+            return { ...bookResult, oldCanceled: true };
+          } catch (e: any) {
+            return {
+              success: false,
+              message: 'Старая запись отменена, но создать новую не удалось. Попробуйте записаться снова.',
+              oldCanceled: true,
+              bookError: String(e?.message ?? e),
+            };
+          }
+        }
 
-        case 'find_patient_appointment':
-          if (!args.phone) return { error: 'Номер телефона не указан.' };
-          return this.getPatientAppointments(client, args.phone, lpuGroupId);
+        case 'get_patient_appointments': {
+          const phone = args.phone ?? patient?.phone;
+          if (!phone) return { error: 'Номер телефона не указан. Пожалуйста, попроси пациента назвать телефон.' };
+          return this.getPatientAppointments(client, phone, lpuGroupId);
+        }
+
+        case 'find_patient_appointment': {
+          const phone = args.phone ?? patient?.phone;
+          if (!phone) return { error: 'Номер телефона не указан.' };
+          return this.getPatientAppointments(client, phone, lpuGroupId);
+        }
 
         default:
           return { error: `Инструмент '${name}' не поддерживается в MedFlex.` };
@@ -298,7 +446,8 @@ export class MedflexService {
     startTime: string,
   ): Promise<{ uuid: string; description: string } | null> {
     if (!phone) return null;
-    const normalizedPhone = phone.replace(/\D/g, '');
+    const normalizedPhone = normalizeRuPhone(phone);
+    if (!normalizedPhone) return null;
     const date = startTime.slice(0, 10); // YYYY-MM-DD
     try {
       const history = await client.getAppointmentHistory({
@@ -405,21 +554,23 @@ export class MedflexService {
 
     if (lpuIds.length === 0) return [];
 
-    // Ищем врачей
-    const page = await client.getDoctors({
-      lpuIds: lpuIds.join(','),
-      specialityIds: specialityIds.length > 0 ? specialityIds.join(',') : undefined,
-      size: 50,
-    });
-
     // Карта lpu_id → название
     const lpus = await this.getCachedLpus(client, lpuGroupId, townId);
     const lpuNameMap = new Map(lpus.map((l) => [l.id, l.name]));
 
-    // Также ищем по фамилии если нет совпадений по специальности
-    let doctors = page.data;
-    if (doctors.length === 0 && specialityIds.length === 0) {
-      // Повторяем без фильтра специальности и ищем по имени
+    // Если специальность сматчилась — фильтруем по specialityIds.
+    // Если нет — пробуем поиск по фамилии (не дёргаем «всех врачей», иначе вернётся
+    // нерелевантный список и LLM начнёт галлюцинировать «УЗИ сердца у терапевта»).
+    let doctors: MfDoctor[];
+    if (specialityIds.length > 0) {
+      const page = await client.getDoctors({
+        lpuIds: lpuIds.join(','),
+        specialityIds: specialityIds.join(','),
+        size: 50,
+      });
+      doctors = page.data;
+    } else {
+      // Fallback: поиск по efio (фамилия/имя врача).
       const allPage = await client.getDoctors({ lpuIds: lpuIds.join(','), size: 50 });
       const q = speciality.toLowerCase();
       doctors = allPage.data.filter((d) => d.efio.toLowerCase().includes(q));
@@ -537,12 +688,9 @@ export class MedflexService {
     const sorted = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
 
     const result = sorted.map(([date, { times, dtSlots }]) => {
-      const d = new Date(`${date}T00:00:00`);
-      const jsDay = d.getDay();
-      const dbDay = jsDay === 0 ? 7 : jsDay;
       return {
         date,
-        dayName: DAY_NAMES[dbDay],
+        dateLabel: formatRuDateLabel(date),
         clinicId,
         clinicName,
         times: mode === 'nearest' ? times.slice(0, 5) : times,
@@ -593,9 +741,10 @@ export class MedflexService {
               specialityId: doc.specialityId,
               price: doc.price,
               isAvailable: true,
-              slot: { date: slots[0].date, time: slots[0].times[0], clinicId: cId, clinicName: slots[0].clinicName },
+              slot: { date: slots[0].date, dateLabel: formatRuDateLabel(slots[0].date), time: slots[0].times[0], clinicId: cId, clinicName: slots[0].clinicName },
+              // allSlots: clinicId/clinicName/dayLabel совпадают с slot.* (один cId, mode='day' = одна дата) — не дублируем для экономии токенов.
               allSlots: params.mode === 'day'
-                ? slots.flatMap((sg) => sg.times.map((t, i) => ({ date: sg.date, time: t, clinicId: cId, clinicName: sg.clinicName, dtSlot: sg.dtSlots[i] })))
+                ? slots.flatMap((sg) => sg.times.map((t, i) => ({ date: sg.date, time: t, dtSlot: sg.dtSlots[i] })))
                 : undefined,
             };
           }
@@ -613,6 +762,133 @@ export class MedflexService {
     );
 
     return results;
+  }
+
+  /**
+   * Поиск медицинской УСЛУГИ (процедуры/исследования) по названию + ближайшие слоты врачей,
+   * которые её выполняют. Используется для запросов вида "УЗИ сердца", "пилинг", "ботокс".
+   *
+   * Flow: /services/prices/?lpu_id=… (per LPU) → match по name → for each doctor in service.doctor_ids
+   *   → /models/doctor/?doctor_ids=… → /schedule/ → ближайший слот.
+   *
+   * Бронирование идёт по специальности врача (book_appointment.specialityId), но цена
+   * в book_appointment.price = service.price, а не приём врача.
+   */
+  async findServices(
+    client: MedflexClient,
+    params: {
+      query: string;
+      lpuGroupId: number;
+      clinicId?: number;
+      townId?: number;
+    },
+  ): Promise<unknown[]> {
+    const apiKey = (client as any).apiKey as string;
+
+    // Список клиник для поиска
+    let lpuIds: number[];
+    if (params.clinicId) {
+      lpuIds = [params.clinicId];
+    } else {
+      const lpus = await this.getCachedLpus(client, params.lpuGroupId, params.townId);
+      lpuIds = lpus.filter((l) => l.direct_appointment_is_supported).map((l) => l.id);
+    }
+    if (lpuIds.length === 0) return [];
+
+    // /services/prices/ per-lpu (lpu_id обязателен по спеке) → собираем + фильтруем по name.
+    const q = params.query.toLowerCase().trim();
+    const matched: Array<{ service: MfService; lpuId: number }> = [];
+    for (const lpuId of lpuIds) {
+      const list = await client.getServicePrices({ lpuId });
+      for (const s of list) {
+        if (s.name.toLowerCase().includes(q)) {
+          matched.push({ service: s, lpuId });
+        }
+      }
+    }
+    if (matched.length === 0) return [];
+
+    // Загружаем всех нужных врачей одним вызовом
+    const allDoctorIds = [...new Set(matched.flatMap((m) => m.service.doctor_ids))];
+    if (allDoctorIds.length === 0) return matched.map(({ service, lpuId }) => ({
+      serviceId: service.id,
+      serviceName: service.name,
+      duration: service.duration,
+      price: service.price,
+      doctorId: null,
+      doctorName: null,
+      speciality: '',
+      specialityId: null,
+      isAvailable: false,
+      slot: null,
+      clinicId: lpuId,
+    }));
+
+    const docPage = await client.getDoctors({
+      lpuIds: lpuIds.join(','),
+      doctorIds: allDoctorIds.join(','),
+      size: 100,
+    });
+    const docMap = new Map(docPage.data.map((d) => [d.id, d]));
+
+    // Карта lpu_id → название и кэш специальностей для имени speciality.
+    const lpus = await this.getCachedLpus(client, params.lpuGroupId, params.townId);
+    const lpuNameMap = new Map(lpus.map((l) => [l.id, l.name]));
+    const allSpecs = await this.getCachedSpecialities(client, apiKey);
+    const specMap = new Map(allSpecs.map((s) => [s.id, s.name]));
+
+    // Для каждой пары (service × doctor) — ближайший слот.
+    const result: unknown[] = [];
+    for (const { service, lpuId } of matched) {
+      const lpuName = lpuNameMap.get(lpuId) ?? `Клиника #${lpuId}`;
+      for (const docId of service.doctor_ids) {
+        const doc = docMap.get(docId);
+        if (!doc || !doc.lpus.includes(lpuId)) continue;
+
+        const specialityId = doc.specialities[0] ?? null;
+        const specialityName = specialityId
+          ? (specMap.get(specialityId) ?? `Специальность #${specialityId}`)
+          : '';
+
+        const slots = await this.getAvailableSlots(client, {
+          doctorId: docId,
+          clinicId: lpuId,
+          lpuGroupId: params.lpuGroupId,
+          mode: 'nearest',
+          townId: params.townId,
+        });
+
+        const baseInfo = {
+          serviceId: service.id,
+          serviceName: service.name,
+          duration: service.duration,
+          price: service.price,
+          doctorId: docId,
+          doctorName: doc.efio,
+          speciality: specialityName,
+          specialityId,
+        };
+
+        if (slots.length > 0 && slots[0].times.length > 0) {
+          result.push({
+            ...baseInfo,
+            isAvailable: true,
+            slot: {
+              date: slots[0].date,
+              dateLabel: formatRuDateLabel(slots[0].date),
+              time: slots[0].times[0],
+              clinicId: lpuId,
+              clinicName: lpuName,
+              dtSlot: slots[0].dtSlots[0],
+            },
+          });
+        } else {
+          result.push({ ...baseInfo, isAvailable: false, slot: null, clinicId: lpuId, clinicName: lpuName });
+        }
+      }
+    }
+
+    return result;
   }
 
   async bookAppointment(
@@ -640,16 +916,16 @@ export class MedflexService {
       return { success: false, message: 'Нельзя записаться на прошедшее время. Пожалуйста, выберите будущий слот.' };
     }
 
-    // Нормализуем телефон: убираем всё кроме цифр, должно быть 11 цифр (79XXXXXXXXX)
-    const phone = args.phone.replace(/\D/g, '');
-    if (phone.length !== 11) {
-      return { success: false, message: 'Неверный формат телефона. Укажите номер в формате 79001234567 (11 цифр).' };
+    // Нормализуем телефон к 79XXXXXXXXX (поддержка +7, 8, 7, без кода страны)
+    const phone = normalizeRuPhone(args.phone);
+    if (!phone) {
+      return { success: false, message: 'Неверный формат телефона. Укажите мобильный номер из 10 или 11 цифр.' };
     }
 
-    // Нормализуем дату рождения
-    const birthday = args.birthday.trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(birthday)) {
-      return { success: false, message: 'Неверный формат даты рождения. Используйте формат ГГГГ-ММ-ДД.' };
+    // Нормализуем дату рождения (принимаем любой формат: "1 января 1983", "01.01.1983", "1983-01-01")
+    const birthday = parseFlexibleDate(args.birthday);
+    if (!birthday) {
+      return { success: false, message: 'Не удалось распознать дату рождения. Попросите пациента уточнить дату.' };
     }
 
     // Форматируем даты в ISO для API
@@ -679,7 +955,8 @@ export class MedflexService {
     return {
       success: true,
       appointmentId: undefined, // MedFlex uses UUID, not integer
-      message: `Запись подтверждена! UUID: ${response.claim_id}. ${dateStr}. Стоимость: ${price} руб.`,
+      uuid: response.claim_id,
+      message: `Запись подтверждена! ${dateStr}.`,
     };
   }
 
@@ -694,7 +971,10 @@ export class MedflexService {
     phone: string,
     lpuGroupId: number,
   ): Promise<Array<PatientAppointmentItem & { uuid: string; canceled: boolean; price: number }>> {
-    const normalizedPhone = phone.replace(/\D/g, '');
+    const normalizedPhone = normalizeRuPhone(phone);
+    if (!normalizedPhone) {
+      throw new Error('Неверный формат телефона. Укажите мобильный номер из 10 или 11 цифр.');
+    }
 
     const history = await client.getAppointmentHistory({
       mobilePhone: normalizedPhone,
@@ -752,10 +1032,6 @@ function mfDateTimeToIso(s: string): string {
   return norm;
 }
 
-function toDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 function formatRuDateTime(d: Date): string {
   const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
   const h = String(d.getHours()).padStart(2, '0');
@@ -768,7 +1044,9 @@ function formatRuDateTime(d: Date): string {
  * weekOffset=1 сдвигает на следующую неделю (для фразы "следующей недели").
  */
 function resolveRelativeOrWeekday(dayName: string, weekOffset = 0): string | null {
-  const s = dayName.toLowerCase().trim();
+  // Принимаем любую морфологическую форму, приводим к канонической.
+  const s = normalizeDayWord(dayName);
+  if (!s) return null;
 
   // Относительные даты
   const today = new Date();
@@ -787,18 +1065,7 @@ function resolveRelativeOrWeekday(dayName: string, weekOffset = 0): string | nul
     return toDateStr(today);
   }
 
-  // Дни недели
-  const map: Record<string, number> = {
-    понедельник: 1, вторник: 2, среда: 3, среду: 3,
-    четверг: 4, пятница: 5, пятницу: 5, суббота: 6, субботу: 6, воскресенье: 0,
-  };
-  const target = map[s];
-  if (target === undefined) return null;
-  const current = today.getDay();
-  let diff = (target - current + 7) % 7;
-  if (diff === 0) diff = 7;
-  diff += weekOffset * 7;
-  const result = new Date(today);
-  result.setDate(today.getDate() + diff);
-  return toDateStr(result);
+  // Дни недели — после normalizeDayWord уже в каноническом виде.
+  // nextWeekdayDate корректно обрабатывает weekOffset (без двойного сдвига).
+  return nextWeekdayDate(s, weekOffset);
 }

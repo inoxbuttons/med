@@ -6,7 +6,7 @@ export declare class MedflexService {
     private readonly logger;
     private specialityCache;
     private lpuCache;
-    getTools(): LlmTool[];
+    getTools(hasPatient?: boolean): LlmTool[];
     executeTool(name: string, args: Record<string, any>, clientId?: number, apiKey?: string | null, lpuGroupId?: number, townId?: number, districtId?: number, patient?: PatientData): Promise<unknown>;
     private findConflictingAppointment;
     private getCachedSpecialities;
@@ -35,6 +35,12 @@ export declare class MedflexService {
         lpuGroupId: number;
         mode: SlotMode;
         targetDate?: string;
+        townId?: number;
+    }): Promise<unknown[]>;
+    findServices(client: MedflexClient, params: {
+        query: string;
+        lpuGroupId: number;
+        clinicId?: number;
         townId?: number;
     }): Promise<unknown[]>;
     bookAppointment(client: MedflexClient, args: {

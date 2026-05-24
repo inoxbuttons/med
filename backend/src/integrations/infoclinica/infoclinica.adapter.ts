@@ -11,6 +11,7 @@ import {
   CancellableAppointment,
 } from '../../booking/booking.service';
 import { IcFilial, IcDoctor, IcFreeSlot, IcBookingResult } from './infoclinica.types';
+import { formatRuDateLabel } from '../shared/date-utils';
 
 // ── Дата / время ─────────────────────────────────────────────────────────────
 
@@ -23,8 +24,6 @@ export function icDateToIso(icDate: string): string {
 export function isoToIcDate(isoDate: string): string {
   return isoDate.replace(/-/g, '');
 }
-
-const DAY_NAMES = ['', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
 
 // ── Справочники ───────────────────────────────────────────────────────────────
 
@@ -79,7 +78,7 @@ export function toSlotGroups(
       const filial = filials.find((f) => f.FILIAL === s.FILIAL);
       groups.set(key, {
         date: isoDate,
-        dayName: DAY_NAMES[dbDay],
+        dateLabel: formatRuDateLabel(isoDate),
         clinicId: s.FILIAL,
         clinicName: filial?.FNAME ?? `Филиал ${s.FILIAL}`,
         times: [],
