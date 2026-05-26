@@ -9,6 +9,8 @@ import { isPlaceholderValue, isMissingPhone, isMissingBirthday } from '../integr
 import { findDayWord, toDateStr } from '../integrations/shared/date-utils';
 import { OpenAiService } from '../llm/openai.service';
 import { GigaChatService } from '../llm/gigachat.service';
+import { QwenService } from '../llm/qwen.service';
+import { CompletionResult, LlmTool } from '../llm/llm.types';
 import { BookingService } from '../booking/booking.service';
 import { TokenUsage } from '../database/entities/token-usage.entity';
 import { LlmUsage } from '../llm/llm.types';
@@ -112,7 +114,7 @@ function compactSearchPairs(msgs: ChatMessage[]): ChatMessage[] {
  * на одну assistant-заметку этого формата. Данные пациента (session.patient) и список
  * UUID-ов (session.recentBookings) живут в session-state, не теряются.
  */
-const BOOKING_NOTE_PREFIX = '[Завершённая запись] ';
+const BOOKING_NOTE_PREFIX = '[Активная запись пациента] ';
 
 /** "2026-05-14T12:00:00" / "2026-05-14 12:00" → "14.05.2026 12:00" */
 function formatRuDateTime(iso: string): string {
@@ -140,6 +142,75 @@ function isSymptomMessage(text: string): boolean {
   return SYMPTOM_PATTERNS.some((re) => re.test(text));
 }
 
+/**
+ * Время суток по сообщению пациента. Используется для пост-фильтра allSlots
+ * в результатах find_doctors_and_slots / find_services.
+ *   morning   06:00–12:00
+ *   afternoon 12:00–16:00
+ *   evening   16:00–22:00
+ */
+type TimeOfDay = 'morning' | 'afternoon' | 'evening';
+
+function extractTimeOfDay(text: string): TimeOfDay | null {
+  // \b в JS regex работает только для ASCII, поэтому используем lookbehind
+  // (?<![а-яё]) — «не предшествует кириллической буквой».
+  if (/(?<![а-яё])(утр(ом|енн)|с утр[аоу])/iu.test(text)) return 'morning';
+  if (/(?<![а-яё])(вечер(ом|н)|под вечер)/iu.test(text)) return 'evening';
+  if (/(?<![а-яё])(днём|в обед|после обеда|дневн)/iu.test(text)) return 'afternoon';
+  return null;
+}
+
+function extractTimeOfDayFromUserMessage(session: SessionData): TimeOfDay | null {
+  const lastUser = [...session.messages].reverse().find((m) => m.role === 'user');
+  if (!lastUser?.content) return null;
+  return extractTimeOfDay(lastUser.content);
+}
+
+/** Час слота "HH:MM" → число 0..23. */
+function slotHour(time: string): number {
+  return parseInt(time.split(':')[0], 10);
+}
+
+function isInTimeOfDay(time: string, tod: TimeOfDay): boolean {
+  const h = slotHour(time);
+  if (isNaN(h)) return true;
+  if (tod === 'morning')   return h >= 6  && h < 12;
+  if (tod === 'afternoon') return h >= 12 && h < 16;
+  return h >= 16 && h < 22;
+}
+
+/**
+ * Фильтрует allSlots по времени суток. Если у врача не остаётся слотов —
+ * isAvailable=false, slot=null (LLM не предложит его, но видит, что есть другие).
+ */
+function filterSlotsByTimeOfDay(result: unknown, tod: TimeOfDay): unknown {
+  if (!Array.isArray(result)) return result;
+  // Сначала фильтруем слоты по времени суток, затем выбрасываем врачей,
+  // у которых ничего не осталось — LLM иначе путается, когда часть docs
+  // помечены isAvailable=false и описывает их как «нет окон вообще».
+  const mapped = result.map((entry: any) => {
+    if (!entry || typeof entry !== 'object') return entry;
+    if (!Array.isArray(entry.allSlots)) {
+      if (entry.slot && entry.slot.time && !isInTimeOfDay(entry.slot.time, tod)) {
+        return null;
+      }
+      return entry;
+    }
+    const filtered = entry.allSlots.filter((s: any) => s?.time && isInTimeOfDay(s.time, tod));
+    if (filtered.length === 0) return null;
+    const first = filtered[0];
+    return {
+      ...entry,
+      isAvailable: true,
+      allSlots: filtered,
+      slot: entry.slot
+        ? { ...entry.slot, time: first.time, date: first.date }
+        : { time: first.time, date: first.date },
+    };
+  });
+  return mapped.filter((e) => e !== null);
+}
+
 
 const CLINIC_SPECIALISTS =
   'Терапевт, Невролог, Кардиолог, Гастроэнтеролог, Эндокринолог, Гинеколог, ' +
@@ -152,12 +223,14 @@ export class ChatService implements OnModuleInit {
   private readonly logger = new Logger(ChatService.name);
   private readonly sessions = new Map<string, SessionData>();
   private readonly systemPrompt: string;
+  private readonly defaultProvider: LlmProvider;
   private readonly SESSION_TTL_MS = 30 * 60 * 1000;
 
   constructor(
     private readonly config: ConfigService,
     private readonly openAi: OpenAiService,
     private readonly gigaChat: GigaChatService,
+    private readonly qwen: QwenService,
     private readonly booking: BookingService,
     @InjectRepository(TokenUsage)
     private readonly tokenUsageRepo: Repository<TokenUsage>,
@@ -165,6 +238,30 @@ export class ChatService implements OnModuleInit {
     const promptFile = path.resolve(__dirname, '../prompts/system-prompt.txt');
     const defaultPrompt = fs.readFileSync(promptFile, 'utf-8').trim();
     this.systemPrompt = this.config.get<string>('CHAT_SYSTEM_PROMPT', defaultPrompt);
+    // По умолчанию из .env: CHAT_DEFAULT_PROVIDER=qwen|gigachat|openai.
+    this.defaultProvider = (this.config.get<string>('CHAT_DEFAULT_PROVIDER') as LlmProvider) ?? 'gigachat';
+  }
+
+  /**
+   * Единая точка вызова LLM — переключает провайдера по строке.
+   * forceText=true означает «без tool-вызовов» (для conflict/confirmation текстовых ответов).
+   */
+  private async callLlm(
+    provider: LlmProvider,
+    context: ChatMessage[],
+    tools: LlmTool[],
+    model: string | undefined,
+    forceText: boolean,
+  ): Promise<CompletionResult> {
+    switch (provider) {
+      case 'gigachat':
+        return this.gigaChat.complete(context, tools, model, forceText);
+      case 'qwen':
+        return this.qwen.complete(context, tools, model, forceText);
+      case 'openai':
+      default:
+        return this.openAi.complete(context, forceText ? [] : tools, model);
+    }
   }
 
   onModuleInit() {
@@ -172,7 +269,7 @@ export class ChatService implements OnModuleInit {
   }
 
   async sendMessage(dto: SendMessageDto): Promise<SendMessageResponse> {
-    const { sessionId, message, provider = 'gigachat', model, clientId, clinicNetId, misType, townId, districtId, encryptedPatient } = dto;
+    const { sessionId, message, provider = this.defaultProvider, model, clientId, clinicNetId, misType, townId, districtId, encryptedPatient } = dto;
 
     const session = this.getOrCreateSession(sessionId, provider, model);
     // Обновляем идентификаторы сессии если переданы
@@ -454,9 +551,7 @@ export class ChatService implements OnModuleInit {
       { role: 'user', content: message },
     ];
 
-    const result = session.provider === 'gigachat'
-      ? await this.gigaChat.complete(context, [], session.model, true)
-      : await this.openAi.complete(context, [], session.model);
+    const result = await this.callLlm(session.provider, context, [], session.model, true);
 
     this.saveUsage(result.usage, sessionId, session.clinicNetId, session.provider);
     return result.type === 'text' ? result.content : 'Пожалуйста, обратитесь к специалисту клиники.';
@@ -478,10 +573,7 @@ export class ChatService implements OnModuleInit {
 
     for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
       const isLastIteration = i === MAX_TOOL_ITERATIONS - 1;
-      const result =
-        session.provider === 'gigachat'
-          ? await this.gigaChat.complete(context, activeTools, session.model, isLastIteration)
-          : await this.openAi.complete(context, activeTools, session.model);
+      const result = await this.callLlm(session.provider, context, activeTools, session.model, isLastIteration);
 
       this.saveUsage(result.usage, sessionId, session.clinicNetId, session.provider);
 
@@ -673,10 +765,7 @@ export class ChatService implements OnModuleInit {
                 ' спроси: оставить обе записи или заменить старую на новую? НЕ вызывай инструменты.';
             }
             // state=conflict_resolution + forceText=true → нужен только текст; tool-схемы не шлём (экономия токенов).
-            const textResult =
-              session.provider === 'gigachat'
-                ? await this.gigaChat.complete(context, [], session.model, true)
-                : await this.openAi.complete(context, [], session.model);
+            const textResult = await this.callLlm(session.provider, context, [], session.model, true);
             this.saveUsage(textResult.usage, sessionId, session.clinicNetId, session.provider);
             return textResult.type === 'text' ? textResult.content : 'Уточните ваш выбор.';
           }
@@ -738,19 +827,25 @@ export class ChatService implements OnModuleInit {
             ' НЕ вызывай инструменты.';
         }
         // state=conflict_resolution + forceText=true → нужен только текст; tool-схемы не шлём (экономия токенов).
-        const conflictTextResult =
-          session.provider === 'gigachat'
-            ? await this.gigaChat.complete(context, [], session.model, true)
-            : await this.openAi.complete(context, [], session.model);
+        const conflictTextResult = await this.callLlm(session.provider, context, [], session.model, true);
         this.saveUsage(conflictTextResult.usage, sessionId, session.clinicNetId, session.provider);
         return conflictTextResult.type === 'text' ? conflictTextResult.content : 'Уточните ваш выбор.';
+      }
+
+      // Если пациент попросил «утром»/«вечером»/«днём» — фильтруем allSlots
+      // на сервере, чтобы LLM не путалась между врачами с разным графиком
+      // (одна работает 09-16, другая 10-18 — «вечером» есть только у второй).
+      let filteredResult: unknown = toolResult;
+      if (result.toolName === 'find_doctors_and_slots' || result.toolName === 'find_services') {
+        const tod = extractTimeOfDayFromUserMessage(session);
+        if (tod) filteredResult = filterSlotsByTimeOfDay(toolResult, tod);
       }
 
       // Append tool result as function message to context and session
       const funcMsg: ChatMessage = {
         role: 'function',
         name: result.toolName,
-        content: JSON.stringify(toolResult),
+        content: JSON.stringify(filteredResult),
       };
       context.push(funcMsg);
       session.messages.push(funcMsg);

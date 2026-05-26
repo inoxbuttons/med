@@ -109,8 +109,9 @@ test('окно через неделю (повтор)', async () => {
 });
 
 test('окно в начале недели → Пн-Ср', async () => {
+  // Пн/Вт/Ср одной и той же недели (см. комментарий в cycle1).
   const mon = nearestWeekday(1);
-  const wed = nearestWeekday(3);
+  const wed = new Date(mon); wed.setDate(wed.getDate() + 2);
   const r = await ask(QUERY('в начале недели'));
   expectSlotDateInRange(r.history, mon, wed);
 });

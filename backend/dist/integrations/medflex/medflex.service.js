@@ -69,6 +69,7 @@ let MedflexService = MedflexService_1 = class MedflexService {
                 name: 'find_services',
                 description: 'Поиск медицинской УСЛУГИ (процедуры, исследования) по названию: "УЗИ сердца", "пилинг", "ботокс", "чистка лица". ' +
                     'Используй ВМЕСТО find_doctors_and_slots, когда пациент называет процедуру/исследование, а не специальность врача. ' +
+                    'Если пациент назвал день («в субботу», «завтра», «на следующей неделе») — передавай dayOfWeek/nextWeek/date, иначе вернётся ближайший слот. ' +
                     'Возвращает: serviceId, serviceName, duration, price (цена услуги), doctorId, doctorName, speciality, specialityId, slot{date,time,clinicId,clinicName}. ' +
                     'Для записи в book_appointment передавай specialityId (специальность врача из этого результата) и price (цена услуги).',
                 parameters: {
@@ -76,6 +77,9 @@ let MedflexService = MedflexService_1 = class MedflexService {
                     properties: {
                         query: { type: 'string', description: 'Название услуги или часть ("УЗИ сердца", "пилинг")' },
                         clinicId: { type: 'number', description: 'ID клиники, опционально' },
+                        dayOfWeek: { type: 'string', description: '"понедельник"…"воскресенье" / "сегодня"/"завтра"/"послезавтра"' },
+                        nextWeek: { type: 'boolean', description: 'true для «следующей недели»' },
+                        date: { type: 'string', description: 'YYYY-MM-DD — только для явных дат с числом' },
                     },
                     required: ['query'],
                 },
@@ -200,13 +204,19 @@ let MedflexService = MedflexService_1 = class MedflexService {
                     return this.getClinics(client, lpuGroupId, townId);
                 case 'find_doctors':
                     return this.findDoctors(client, args.speciality, lpuGroupId, args.clinicId, townId);
-                case 'find_services':
+                case 'find_services': {
+                    let svcTargetDate = args.date;
+                    if (args.dayOfWeek) {
+                        svcTargetDate = resolveRelativeOrWeekday(args.dayOfWeek, args.nextWeek ? 1 : 0) ?? svcTargetDate;
+                    }
                     return this.findServices(client, {
                         query: args.query,
+                        targetDate: svcTargetDate,
                         lpuGroupId,
                         clinicId: args.clinicId,
                         townId,
                     });
+                }
                 case 'get_available_slots': {
                     let targetDate = args.targetDate;
                     if (args.dayOfWeek) {
@@ -544,8 +554,18 @@ let MedflexService = MedflexService_1 = class MedflexService {
     }
     async findDoctorsAndSlots(client, params) {
         const doctors = await this.findDoctors(client, params.speciality, params.lpuGroupId, params.clinicId, params.townId);
-        if (doctors.length === 0)
+        if (doctors.length === 0) {
+            const svc = await this.findServices(client, {
+                query: params.speciality,
+                lpuGroupId: params.lpuGroupId,
+                clinicId: params.clinicId,
+                townId: params.townId,
+                targetDate: params.targetDate,
+            });
+            if (svc.length > 0)
+                return svc;
             return [];
+        }
         const results = await Promise.all(doctors.map(async (doc) => {
             const clinicIds = doc.clinics.map((c) => c.id);
             for (const cId of clinicIds) {
@@ -648,7 +668,8 @@ let MedflexService = MedflexService_1 = class MedflexService {
                     doctorId: docId,
                     clinicId: lpuId,
                     lpuGroupId: params.lpuGroupId,
-                    mode: 'nearest',
+                    mode: params.targetDate ? 'day' : 'nearest',
+                    targetDate: params.targetDate,
                     townId: params.townId,
                 });
                 const baseInfo = {

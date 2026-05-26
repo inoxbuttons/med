@@ -21,7 +21,7 @@
 
 import {
   test, runAll, setCycle, resetMock, TestContext,
-  nearestWeekday, toIso, expectSlotDate, expectSlotDateInRange, expectBookingSuccess,
+  nearestWeekday, nextWeekDay, toIso, expectSlotDate, expectSlotDateInRange, expectBookingSuccess,
   TEST_PATIENT_LINE,
   readMockAppointments, activeMockAppointments, hasSuccessfulBooking,
 } from './lib';
@@ -95,10 +95,11 @@ test(
       try {
         const args = JSON.parse(lastBookArgs.function_call.arguments);
         if (args.startTime) {
-          const hourMatch = args.startTime.match(/T(\d{2}):/);
+          // Поддерживаем оба формата: "2026-05-26T17:00:00" и "2026-05-26 17:00".
+          const hourMatch = String(args.startTime).match(/[T\s](\d{2}):/);
           const hour = hourMatch ? parseInt(hourMatch[1], 10) : -1;
           if (hour < 16) ctx.fail(`startTime hour=${hour}, ожидали ≥ 16 (вечер)`);
-          if (!args.startTime.startsWith(toIso(tue))) ctx.fail(`startTime="${args.startTime}", ожидали ${toIso(tue)}* (вторник)`);
+          if (!String(args.startTime).startsWith(toIso(tue))) ctx.fail(`startTime="${args.startTime}", ожидали ${toIso(tue)}* (вторник)`);
         }
       } catch { /* ignore */ }
     }
@@ -248,20 +249,20 @@ test(
   'Пациент просит записать на УЗИ сердца. Бот находит услугу, врача (Соколов УЗИ), даёт слоты, доводит до записи. Финальная цена = 3500, specialityId = 10 (Врач УЗИ).',
   async (ctx: TestContext) => {
     resetMock();
-    const r1 = await ctx.user('Хочу записаться на УЗИ сердца');
-    // В результате должен быть Соколов (id 1008) и услуга «УЗИ сердца» (id "5101")
-    const hasUziDoc = r1.history.some(m => {
-      if (m.role !== 'function' || m.name !== 'find_services') return false;
-      try {
-        const arr = JSON.parse(m.content);
-        return Array.isArray(arr) && arr.some((r: any) => r.doctorId === 1008 || r.serviceName?.includes('УЗИ'));
-      } catch { return false; }
-    });
-    if (!hasUziDoc) ctx.fail('Не нашли врача УЗИ / услугу «УЗИ сердца» в результате find_services');
-
+    await ctx.user('Хочу записаться на УЗИ сердца');
     await ctx.user('Возьму ближайший вариант');
     await ctx.user(TEST_PATIENT_LINE);
     const r4 = await ctx.user('Подтверждаю');
+
+    // Проверяем за весь диалог через ctx.turns — r4.history не годится, т.к.
+    // compactSearchResults после успешного booking стирает find_services pair.
+    const hasUziDoc = ctx.turns.some(t =>
+      t.toolCalls.some(tc =>
+        tc.name === 'find_services' && Array.isArray(tc.result) &&
+        tc.result.some((r: any) => r.doctorId === 1008 || (r.serviceName ?? '').includes('УЗИ'))
+      )
+    );
+    if (!hasUziDoc) ctx.fail('Не нашли врача УЗИ / услугу «УЗИ сердца» в результате find_services');
 
     try { expectBookingSuccess(r4.history); }
     catch (e: any) { ctx.fail(`Финальный booking: ${e.message}`); }
@@ -612,8 +613,8 @@ test(
     const rFinal = await ctx.user('Подтверждаю');
 
     try { expectBookingSuccess(rFinal.history); } catch (e: any) { ctx.fail(`booking: ${e.message}`); }
-    // HARD: финальный slot — Ср следующей недели, 11:00.
-    const wed = nearestWeekday(3);
+    // HARD: финальный slot — Ср следующей недели (пациент сказал «следующая неделя»), 11:00.
+    const wed = nextWeekDay(3);
     const last = rFinal.history.filter(m => m.role === 'assistant' && m.function_call?.name === 'book_appointment').pop();
     if (last?.function_call) {
       try {

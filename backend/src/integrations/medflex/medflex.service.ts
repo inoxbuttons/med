@@ -109,13 +109,17 @@ export class MedflexService {
         description:
           'Поиск медицинской УСЛУГИ (процедуры, исследования) по названию: "УЗИ сердца", "пилинг", "ботокс", "чистка лица". ' +
           'Используй ВМЕСТО find_doctors_and_slots, когда пациент называет процедуру/исследование, а не специальность врача. ' +
+          'Если пациент назвал день («в субботу», «завтра», «на следующей неделе») — передавай dayOfWeek/nextWeek/date, иначе вернётся ближайший слот. ' +
           'Возвращает: serviceId, serviceName, duration, price (цена услуги), doctorId, doctorName, speciality, specialityId, slot{date,time,clinicId,clinicName}. ' +
           'Для записи в book_appointment передавай specialityId (специальность врача из этого результата) и price (цена услуги).',
         parameters: {
           type: 'object',
           properties: {
-            query:    { type: 'string', description: 'Название услуги или часть ("УЗИ сердца", "пилинг")' },
-            clinicId: { type: 'number', description: 'ID клиники, опционально' },
+            query:     { type: 'string', description: 'Название услуги или часть ("УЗИ сердца", "пилинг")' },
+            clinicId:  { type: 'number', description: 'ID клиники, опционально' },
+            dayOfWeek: { type: 'string', description: '"понедельник"…"воскресенье" / "сегодня"/"завтра"/"послезавтра"' },
+            nextWeek:  { type: 'boolean', description: 'true для «следующей недели»' },
+            date:      { type: 'string', description: 'YYYY-MM-DD — только для явных дат с числом' },
           },
           required: ['query'],
         },
@@ -270,13 +274,21 @@ export class MedflexService {
         case 'find_doctors':
           return this.findDoctors(client, args.speciality, lpuGroupId, args.clinicId, townId);
 
-        case 'find_services':
+        case 'find_services': {
+          // dayOfWeek/date — фильтр по конкретной дате. Аналогично find_doctors_and_slots,
+          // dayOfWeek приоритетнее (резолвер надёжнее, чем LLM-арифметика).
+          let svcTargetDate: string | undefined = args.date;
+          if (args.dayOfWeek) {
+            svcTargetDate = resolveRelativeOrWeekday(args.dayOfWeek, args.nextWeek ? 1 : 0) ?? svcTargetDate;
+          }
           return this.findServices(client, {
             query: args.query,
+            targetDate: svcTargetDate,
             lpuGroupId,
             clinicId: args.clinicId,
             townId,
           });
+        }
 
         case 'get_available_slots': {
           // dayOfWeek имеет приоритет над targetDate: если LLM ошиблась с YYYY-MM-DD,
@@ -719,7 +731,20 @@ export class MedflexService {
     },
   ): Promise<unknown[]> {
     const doctors = await this.findDoctors(client, params.speciality, params.lpuGroupId, params.clinicId, params.townId);
-    if (doctors.length === 0) return [];
+    if (doctors.length === 0) {
+      // Fallback: пациент мог назвать услугу как «специальность» («чистка лица»,
+      // «УЗИ сердца», «ботокс»). Пробуем find_services с тем же query —
+      // LLM получит совместимый по форме результат с doctorId/doctorName/slot.
+      const svc = await this.findServices(client, {
+        query: params.speciality,
+        lpuGroupId: params.lpuGroupId,
+        clinicId: params.clinicId,
+        townId: params.townId,
+        targetDate: params.targetDate,
+      });
+      if (svc.length > 0) return svc;
+      return [];
+    }
 
     const results = await Promise.all(
       doctors.map(async (doc) => {
@@ -781,6 +806,8 @@ export class MedflexService {
       lpuGroupId: number;
       clinicId?: number;
       townId?: number;
+      /** Если задан — слоты фильтруются на этот день; иначе берём ближайший. */
+      targetDate?: string;
     },
   ): Promise<unknown[]> {
     const apiKey = (client as any).apiKey as string;
@@ -854,7 +881,9 @@ export class MedflexService {
           doctorId: docId,
           clinicId: lpuId,
           lpuGroupId: params.lpuGroupId,
-          mode: 'nearest',
+          // Если задан targetDate — берём весь день; иначе ближайший слот.
+          mode: params.targetDate ? 'day' : 'nearest',
+          targetDate: params.targetDate,
           townId: params.townId,
         });
 

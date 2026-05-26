@@ -25,6 +25,7 @@ const patient_data_utils_1 = require("../integrations/shared/patient-data-utils"
 const date_utils_1 = require("../integrations/shared/date-utils");
 const openai_service_1 = require("../llm/openai.service");
 const gigachat_service_1 = require("../llm/gigachat.service");
+const qwen_service_1 = require("../llm/qwen.service");
 const booking_service_1 = require("../booking/booking.service");
 const token_usage_entity_1 = require("../database/entities/token-usage.entity");
 const MAX_TOOL_ITERATIONS = 6;
@@ -91,7 +92,7 @@ function compactSearchPairs(msgs) {
     }
     return out;
 }
-const BOOKING_NOTE_PREFIX = '[Завершённая запись] ';
+const BOOKING_NOTE_PREFIX = '[Активная запись пациента] ';
 function formatRuDateTime(iso) {
     const m = iso.match(/(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
     if (!m)
@@ -114,15 +115,71 @@ const SYMPTOM_PATTERNS = [
 function isSymptomMessage(text) {
     return SYMPTOM_PATTERNS.some((re) => re.test(text));
 }
+function extractTimeOfDay(text) {
+    if (/(?<![а-яё])(утр(ом|енн)|с утр[аоу])/iu.test(text))
+        return 'morning';
+    if (/(?<![а-яё])(вечер(ом|н)|под вечер)/iu.test(text))
+        return 'evening';
+    if (/(?<![а-яё])(днём|в обед|после обеда|дневн)/iu.test(text))
+        return 'afternoon';
+    return null;
+}
+function extractTimeOfDayFromUserMessage(session) {
+    const lastUser = [...session.messages].reverse().find((m) => m.role === 'user');
+    if (!lastUser?.content)
+        return null;
+    return extractTimeOfDay(lastUser.content);
+}
+function slotHour(time) {
+    return parseInt(time.split(':')[0], 10);
+}
+function isInTimeOfDay(time, tod) {
+    const h = slotHour(time);
+    if (isNaN(h))
+        return true;
+    if (tod === 'morning')
+        return h >= 6 && h < 12;
+    if (tod === 'afternoon')
+        return h >= 12 && h < 16;
+    return h >= 16 && h < 22;
+}
+function filterSlotsByTimeOfDay(result, tod) {
+    if (!Array.isArray(result))
+        return result;
+    const mapped = result.map((entry) => {
+        if (!entry || typeof entry !== 'object')
+            return entry;
+        if (!Array.isArray(entry.allSlots)) {
+            if (entry.slot && entry.slot.time && !isInTimeOfDay(entry.slot.time, tod)) {
+                return null;
+            }
+            return entry;
+        }
+        const filtered = entry.allSlots.filter((s) => s?.time && isInTimeOfDay(s.time, tod));
+        if (filtered.length === 0)
+            return null;
+        const first = filtered[0];
+        return {
+            ...entry,
+            isAvailable: true,
+            allSlots: filtered,
+            slot: entry.slot
+                ? { ...entry.slot, time: first.time, date: first.date }
+                : { time: first.time, date: first.date },
+        };
+    });
+    return mapped.filter((e) => e !== null);
+}
 const CLINIC_SPECIALISTS = 'Терапевт, Невролог, Кардиолог, Гастроэнтеролог, Эндокринолог, Гинеколог, ' +
     'Акушер-гинеколог, Уролог, Офтальмолог, Травматолог-ортопед, Хирург, ' +
     'Аллерголог-иммунолог, Дерматовенеролог, Оториноларинголог, ' +
     'Онколог-маммолог, Нефролог, Проктолог, Врач УЗИ';
 let ChatService = ChatService_1 = class ChatService {
-    constructor(config, openAi, gigaChat, booking, tokenUsageRepo) {
+    constructor(config, openAi, gigaChat, qwen, booking, tokenUsageRepo) {
         this.config = config;
         this.openAi = openAi;
         this.gigaChat = gigaChat;
+        this.qwen = qwen;
         this.booking = booking;
         this.tokenUsageRepo = tokenUsageRepo;
         this.logger = new common_1.Logger(ChatService_1.name);
@@ -131,12 +188,24 @@ let ChatService = ChatService_1 = class ChatService {
         const promptFile = path.resolve(__dirname, '../prompts/system-prompt.txt');
         const defaultPrompt = fs.readFileSync(promptFile, 'utf-8').trim();
         this.systemPrompt = this.config.get('CHAT_SYSTEM_PROMPT', defaultPrompt);
+        this.defaultProvider = this.config.get('CHAT_DEFAULT_PROVIDER') ?? 'gigachat';
+    }
+    async callLlm(provider, context, tools, model, forceText) {
+        switch (provider) {
+            case 'gigachat':
+                return this.gigaChat.complete(context, tools, model, forceText);
+            case 'qwen':
+                return this.qwen.complete(context, tools, model, forceText);
+            case 'openai':
+            default:
+                return this.openAi.complete(context, forceText ? [] : tools, model);
+        }
     }
     onModuleInit() {
         setInterval(() => this.cleanExpiredSessions(), 10 * 60 * 1000);
     }
     async sendMessage(dto) {
-        const { sessionId, message, provider = 'gigachat', model, clientId, clinicNetId, misType, townId, districtId, encryptedPatient } = dto;
+        const { sessionId, message, provider = this.defaultProvider, model, clientId, clinicNetId, misType, townId, districtId, encryptedPatient } = dto;
         const session = this.getOrCreateSession(sessionId, provider, model);
         if (clientId !== undefined)
             session.clientId = clientId;
@@ -353,9 +422,7 @@ let ChatService = ChatService_1 = class ChatService {
             ...session.messages.slice(-5, -1).filter((m) => m.role === 'user' || m.role === 'assistant'),
             { role: 'user', content: message },
         ];
-        const result = session.provider === 'gigachat'
-            ? await this.gigaChat.complete(context, [], session.model, true)
-            : await this.openAi.complete(context, [], session.model);
+        const result = await this.callLlm(session.provider, context, [], session.model, true);
         this.saveUsage(result.usage, sessionId, session.clinicNetId, session.provider);
         return result.type === 'text' ? result.content : 'Пожалуйста, обратитесь к специалисту клиники.';
     }
@@ -365,9 +432,7 @@ let ChatService = ChatService_1 = class ChatService {
             : tools;
         for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
             const isLastIteration = i === MAX_TOOL_ITERATIONS - 1;
-            const result = session.provider === 'gigachat'
-                ? await this.gigaChat.complete(context, activeTools, session.model, isLastIteration)
-                : await this.openAi.complete(context, activeTools, session.model);
+            const result = await this.callLlm(session.provider, context, activeTools, session.model, isLastIteration);
             this.saveUsage(result.usage, sessionId, session.clinicNetId, session.provider);
             if (result.type === 'text') {
                 return result.content;
@@ -517,9 +582,7 @@ let ChatService = ChatService_1 = class ChatService {
                                     ' Объясни пациенту ситуацию (поле existingAppointment в последнем результате инструмента),' +
                                     ' спроси: оставить обе записи или заменить старую на новую? НЕ вызывай инструменты.';
                         }
-                        const textResult = session.provider === 'gigachat'
-                            ? await this.gigaChat.complete(context, [], session.model, true)
-                            : await this.openAi.complete(context, [], session.model);
+                        const textResult = await this.callLlm(session.provider, context, [], session.model, true);
                         this.saveUsage(textResult.usage, sessionId, session.clinicNetId, session.provider);
                         return textResult.type === 'text' ? textResult.content : 'Уточните ваш выбор.';
                     }
@@ -569,16 +632,20 @@ let ChatService = ChatService_1 = class ChatService {
                             ' Предложи два варианта: "заменить" (отменить старую и создать новую) или "выбрать другое время".' +
                             ' НЕ вызывай инструменты.';
                 }
-                const conflictTextResult = session.provider === 'gigachat'
-                    ? await this.gigaChat.complete(context, [], session.model, true)
-                    : await this.openAi.complete(context, [], session.model);
+                const conflictTextResult = await this.callLlm(session.provider, context, [], session.model, true);
                 this.saveUsage(conflictTextResult.usage, sessionId, session.clinicNetId, session.provider);
                 return conflictTextResult.type === 'text' ? conflictTextResult.content : 'Уточните ваш выбор.';
+            }
+            let filteredResult = toolResult;
+            if (result.toolName === 'find_doctors_and_slots' || result.toolName === 'find_services') {
+                const tod = extractTimeOfDayFromUserMessage(session);
+                if (tod)
+                    filteredResult = filterSlotsByTimeOfDay(toolResult, tod);
             }
             const funcMsg = {
                 role: 'function',
                 name: result.toolName,
-                content: JSON.stringify(toolResult),
+                content: JSON.stringify(filteredResult),
             };
             context.push(funcMsg);
             session.messages.push(funcMsg);
@@ -815,10 +882,11 @@ let ChatService = ChatService_1 = class ChatService {
 exports.ChatService = ChatService;
 exports.ChatService = ChatService = ChatService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __param(4, (0, typeorm_1.InjectRepository)(token_usage_entity_1.TokenUsage)),
+    __param(5, (0, typeorm_1.InjectRepository)(token_usage_entity_1.TokenUsage)),
     __metadata("design:paramtypes", [config_1.ConfigService,
         openai_service_1.OpenAiService,
         gigachat_service_1.GigaChatService,
+        qwen_service_1.QwenService,
         booking_service_1.BookingService,
         typeorm_2.Repository])
 ], ChatService);

@@ -42,6 +42,7 @@ export declare class MedflexService {
         lpuGroupId: number;
         clinicId?: number;
         townId?: number;
+        targetDate?: string;
     }): Promise<unknown[]>;
     bookAppointment(client: MedflexClient, args: {
         doctorId: number;

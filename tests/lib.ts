@@ -648,7 +648,10 @@ const c = {
   bold: '\x1b[1m',
 };
 
-export async function runAll(filter?: string): Promise<void> {
+export async function runAll(
+  filter?: string,
+  opts?: { beforeEach?: () => void | Promise<void> },
+): Promise<void> {
   const t0 = Date.now();
   let passed = 0;
   let failed = 0;
@@ -661,6 +664,7 @@ export async function runAll(filter?: string): Promise<void> {
     const ctx = new TestContext(t.name, t.scenario, _cycleName);
 
     try {
+      if (opts?.beforeEach) await opts.beforeEach();
       await t.fn(ctx);
       // Если тест не сложил hardErrors сам — статус PASS.
       if (ctx.hardErrors.length === 0) ctx.status = 'PASS';

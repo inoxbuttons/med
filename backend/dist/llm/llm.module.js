@@ -10,13 +10,14 @@ exports.LlmModule = void 0;
 const common_1 = require("@nestjs/common");
 const openai_service_1 = require("./openai.service");
 const gigachat_service_1 = require("./gigachat.service");
+const qwen_service_1 = require("./qwen.service");
 let LlmModule = class LlmModule {
 };
 exports.LlmModule = LlmModule;
 exports.LlmModule = LlmModule = __decorate([
     (0, common_1.Module)({
-        providers: [openai_service_1.OpenAiService, gigachat_service_1.GigaChatService],
-        exports: [openai_service_1.OpenAiService, gigachat_service_1.GigaChatService],
+        providers: [openai_service_1.OpenAiService, gigachat_service_1.GigaChatService, qwen_service_1.QwenService],
+        exports: [openai_service_1.OpenAiService, gigachat_service_1.GigaChatService, qwen_service_1.QwenService],
     })
 ], LlmModule);
 //# sourceMappingURL=llm.module.js.map

@@ -23,7 +23,8 @@ import {
   expectTimeInRange,
 } from './lib';
 
-resetMock();
+// Сбрасываем мок перед каждым тестом — иначе бронирования накапливаются
+// (15-й тест может не найти морнинг-слот, потому что предыдущие тесты их заняли).
 
 // ── Дни недели ───────────────────────────────────────────────────────────────
 // Проверяем, что нормализатор и резолвер корректно вычисляют ближайший день
@@ -137,10 +138,13 @@ test('через неделю → ~today+7', async () => {
 });
 
 test('в начале недели → Пн-Вт-Ср', async () => {
+  // «Начало недели» — Пн/Вт/Ср ОДНОЙ И ТОЙ ЖЕ предстоящей недели.
+  // Используем nearestWeekday(1) как опору + 2 дня, чтобы Пн и Ср не разъехались
+  // по разным неделям, если сегодня уже Пн (тогда nearestWeekday(1)=след.Пн,
+  // а nearestWeekday(3)=эта Ср — диапазон получался бы инвертированным).
   const mon = nearestWeekday(1);
-  const wed = nearestWeekday(3);
+  const wed = new Date(mon); wed.setDate(wed.getDate() + 2);
   const r = await fullBooking('Запиши меня к терапевту в начале недели', PICK_FIRST);
-  // Слот должен попасть в Пн/Вт/Ср.
   expectSlotDateInRange(r.r1.history, mon, wed);
   expectBookingSuccess(r.r4!.history);
 });
@@ -214,7 +218,7 @@ test('через месяц → ~today+30', async () => {
 
 // ── Запуск ───────────────────────────────────────────────────────────────────
 
-runAll(process.argv[2]).catch((e) => {
+runAll(process.argv[2], { beforeEach: resetMock }).catch((e) => {
   console.error(e);
   process.exit(1);
 });

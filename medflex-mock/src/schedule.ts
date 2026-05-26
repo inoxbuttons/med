@@ -87,8 +87,9 @@ export function buildSchedule(params: {
     const lpuDoctors = DOCTORS.filter((d) => d.lpus.includes(lpuId));
 
     const doctorSchedules = lpuDoctors.map((doc) => {
-      const wh = doc.workingHours.find((w) => w.lpu_id === lpuId);
-      if (!wh) {
+      // Все workingHours этого врача для этой клиники (может быть несколько — например, Пн-Пт + Сб).
+      const whs = doc.workingHours.filter((w) => w.lpu_id === lpuId);
+      if (whs.length === 0) {
         return {
           doctor_id: doc.id,
           prices: doc.prices,
@@ -105,7 +106,9 @@ export function buildSchedule(params: {
         const jsDay = date.getDay(); // 0=Sun..6=Sat
         const dbDay = jsDay === 0 ? 7 : jsDay; // 1=Mon..7=Sun
 
-        if (!wh.days.includes(dbDay)) continue;
+        // Берём первое подходящее окно для этого дня недели (если врач указал несколько).
+        const wh = whs.find((w) => w.days.includes(dbDay));
+        if (!wh) continue;
 
         const dateStr = toDateStr(date);
         const daySlots = generateDaySlots(dateStr, wh);

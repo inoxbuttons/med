@@ -1,4 +1,4 @@
-export type LlmProvider = 'openai' | 'gigachat';
+export type LlmProvider = 'openai' | 'gigachat' | 'qwen';
 
 export type MessageRole = 'system' | 'user' | 'assistant' | 'function';
 
