@@ -424,13 +424,16 @@ export class MedflexService {
         case 'get_patient_appointments': {
           const phone = args.phone ?? patient?.phone;
           if (!phone) return { error: 'Номер телефона не указан. Пожалуйста, попроси пациента назвать телефон.' };
-          return this.getPatientAppointments(client, phone, lpuGroupId);
+          // await обязателен — иначе исключение getPatientAppointments
+          // (например, «Неверный формат телефона») улетит мимо нашего try/catch
+          // и превратится в HTTP 500 на уровне chat.service.
+          return await this.getPatientAppointments(client, phone, lpuGroupId);
         }
 
         case 'find_patient_appointment': {
           const phone = args.phone ?? patient?.phone;
           if (!phone) return { error: 'Номер телефона не указан.' };
-          return this.getPatientAppointments(client, phone, lpuGroupId);
+          return await this.getPatientAppointments(client, phone, lpuGroupId);
         }
 
         default:

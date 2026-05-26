@@ -337,13 +337,13 @@ let MedflexService = MedflexService_1 = class MedflexService {
                     const phone = args.phone ?? patient?.phone;
                     if (!phone)
                         return { error: 'Номер телефона не указан. Пожалуйста, попроси пациента назвать телефон.' };
-                    return this.getPatientAppointments(client, phone, lpuGroupId);
+                    return await this.getPatientAppointments(client, phone, lpuGroupId);
                 }
                 case 'find_patient_appointment': {
                     const phone = args.phone ?? patient?.phone;
                     if (!phone)
                         return { error: 'Номер телефона не указан.' };
-                    return this.getPatientAppointments(client, phone, lpuGroupId);
+                    return await this.getPatientAppointments(client, phone, lpuGroupId);
                 }
                 default:
                     return { error: `Инструмент '${name}' не поддерживается в MedFlex.` };
