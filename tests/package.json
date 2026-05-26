@@ -4,10 +4,11 @@
   "private": true,
   "description": "Интеграционные тесты чата: проверка корректности дат на каждом шаге flow.",
   "scripts": {
-    "test": "npm run test:cycle1 && npm run test:cycle2 && npm run test:cycle3",
+    "test": "npm run test:cycle1 && npm run test:cycle2 && npm run test:cycle3 && npm run test:cycle4",
     "test:cycle1": "ts-node cycle1-booking.ts",
     "test:cycle2": "ts-node cycle2-availability.ts",
     "test:cycle3": "ts-node cycle3-multi-turn.ts",
+    "test:cycle4": "ts-node cycle4-services-and-complaints.ts",
     "reset": "node -e \"require('fs').writeFileSync('../medflex-mock/data/appointments.json', '[]'); console.log('appointments.json reset to []')\""
   },
   "devDependencies": {

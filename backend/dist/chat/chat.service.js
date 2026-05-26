@@ -115,6 +115,30 @@ const SYMPTOM_PATTERNS = [
 function isSymptomMessage(text) {
     return SYMPTOM_PATTERNS.some((re) => re.test(text));
 }
+const EMERGENCY_PATTERNS = [
+    /(резкая|острая|сильная|невыносим).{0,30}боль.{0,30}(груд|сердц)/iu,
+    /(не могу|трудно|тяжело).{0,30}дыша/iu,
+    /(задыха|удушь|перехватило дыхан)/iu,
+    /(потеря(л|ла)?|теряет).{0,15}сознани/iu,
+    /(без сознан|без созн)/iu,
+    /(инсульт|инфаркт)/iu,
+    /(сильн[а-яё]+\s+кровотечен|обильн[а-яё]+\s+кровотечен|кровотечен[а-яё]+\s+(сильн|обильн|остановить))/iu,
+    /(не могу|невозможно).{0,20}(шевел|двигать|встать).{0,40}(нога|рука|конечн)/iu,
+    /(проглотил|проглотила|глотнул).{0,40}(батаре|монет|игл|таблетк|острое|инородн)/iu,
+    /(температур[а-яё]*\s*(под|до|выше|за)?\s*(39|40|41)|жар.{0,20}(39|40|41))/iu,
+    /(судорог[а-яё]*|конвульси)/iu,
+    /(отравлен|отравил|выпил.{0,20}(хими|кислот|щёлоч|щелоч|таблет))/iu,
+    /(ожог.{0,30}(больш|обширн|сильн|кипяток|пламя))/iu,
+    /(парализ|онемел[а-яё]*\s+(половина|сторона|тело))/iu,
+    /(перелом\s+открыт|открытый\s+перелом|кость.{0,15}торчит)/iu,
+    /(аллерги|анафилак).{0,30}(шок|опух|задыха|отёк)/iu,
+];
+function isEmergencyMessage(text) {
+    return EMERGENCY_PATTERNS.some((re) => re.test(text));
+}
+const EMERGENCY_REPLY = 'Это похоже на экстренную ситуацию. Срочно позвоните в скорую помощь: **103** ' +
+    '(с мобильного — **112**). Если возможно, оставайтесь с пострадавшим до приезда ' +
+    'врачей. Запись в клинике в такой ситуации не нужна — медлить нельзя.';
 function extractTimeOfDay(text) {
     if (/(?<![а-яё])(утр(ом|енн)|с утр[аоу])/iu.test(text))
         return 'morning';
@@ -391,7 +415,10 @@ let ChatService = ChatService_1 = class ChatService {
         }
         let reply;
         try {
-            if (isSymptomMessage(message) && session.misType !== 'medflex') {
+            if (isEmergencyMessage(message)) {
+                reply = EMERGENCY_REPLY;
+            }
+            else if (isSymptomMessage(message) && session.misType !== 'medflex') {
                 reply = await this.handleSymptomMessage(message, systemWithDate, session, sessionId);
             }
             else {

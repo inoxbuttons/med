@@ -405,6 +405,44 @@ let MedflexService = MedflexService_1 = class MedflexService {
     async resolveSpecialities(query, client, apiKey) {
         const all = await this.getCachedSpecialities(client, apiKey);
         const q = query.toLowerCase().trim();
+        const SYNONYMS = {
+            'лор': 'оторинол',
+            'лор-врач': 'оторинол',
+            'отоларинголог': 'оторинол',
+            'ухо-горло-нос': 'оторинол',
+            'ухогорлонос': 'оторинол',
+            'глазной': 'офтальм',
+            'окулист': 'офтальм',
+            'кожный': 'дермат',
+            'кожник': 'дермат',
+            'женский': 'гинеколог',
+            'женский врач': 'гинеколог',
+            'мужской': 'уролог',
+            'простатит': 'уролог',
+            'сердечный': 'кардиолог',
+            'кардио': 'кардиолог',
+            'желудок': 'гастро',
+            'жкт': 'гастро',
+            'сахарный диабет': 'эндокринолог',
+            'щитовидка': 'эндокринолог',
+            'нервы': 'невролог',
+            'голова': 'невролог',
+            'позвоночник': 'травматолог',
+            'спина': 'невролог',
+            'аллергия': 'аллерголог',
+            'крови': 'гематолог',
+            'почки': 'нефролог',
+            'грудь': 'маммолог',
+            'геморрой': 'проктолог',
+            'узи': 'узи',
+            'хирург': 'хирург',
+        };
+        const expanded = SYNONYMS[q] ?? null;
+        if (expanded) {
+            const synMatches = all.filter((s) => s.name.toLowerCase().includes(expanded));
+            if (synMatches.length > 0)
+                return synMatches;
+        }
         const matches = all.filter((s) => s.name.toLowerCase().includes(q));
         if (matches.length > 0)
             return matches;

@@ -143,6 +143,41 @@ function isSymptomMessage(text: string): boolean {
 }
 
 /**
+ * Экстренные ситуации, при которых ассистент НЕ должен предлагать запись —
+ * вместо этого подскажет звонить 103/112. Покрывает: острая боль в груди,
+ * потеря сознания, удушье, обширное кровотечение, инсульт-признаки, ребёнок
+ * проглотил инородное тело, очень высокая температура у ребёнка, судороги,
+ * травма с невозможностью двигаться, отравление, ожог большой площади.
+ */
+const EMERGENCY_PATTERNS: RegExp[] = [
+  /(резкая|острая|сильная|невыносим).{0,30}боль.{0,30}(груд|сердц)/iu,
+  /(не могу|трудно|тяжело).{0,30}дыша/iu,
+  /(задыха|удушь|перехватило дыхан)/iu,
+  /(потеря(л|ла)?|теряет).{0,15}сознани/iu,
+  /(без сознан|без созн)/iu,
+  /(инсульт|инфаркт)/iu,
+  /(сильн[а-яё]+\s+кровотечен|обильн[а-яё]+\s+кровотечен|кровотечен[а-яё]+\s+(сильн|обильн|остановить))/iu,
+  /(не могу|невозможно).{0,20}(шевел|двигать|встать).{0,40}(нога|рука|конечн)/iu,
+  /(проглотил|проглотила|глотнул).{0,40}(батаре|монет|игл|таблетк|острое|инородн)/iu,
+  /(температур[а-яё]*\s*(под|до|выше|за)?\s*(39|40|41)|жар.{0,20}(39|40|41))/iu,
+  /(судорог[а-яё]*|конвульси)/iu,
+  /(отравлен|отравил|выпил.{0,20}(хими|кислот|щёлоч|щелоч|таблет))/iu,
+  /(ожог.{0,30}(больш|обширн|сильн|кипяток|пламя))/iu,
+  /(парализ|онемел[а-яё]*\s+(половина|сторона|тело))/iu,
+  /(перелом\s+открыт|открытый\s+перелом|кость.{0,15}торчит)/iu,
+  /(аллерги|анафилак).{0,30}(шок|опух|задыха|отёк)/iu,
+];
+
+function isEmergencyMessage(text: string): boolean {
+  return EMERGENCY_PATTERNS.some((re) => re.test(text));
+}
+
+const EMERGENCY_REPLY =
+  'Это похоже на экстренную ситуацию. Срочно позвоните в скорую помощь: **103** ' +
+  '(с мобильного — **112**). Если возможно, оставайтесь с пострадавшим до приезда ' +
+  'врачей. Запись в клинике в такой ситуации не нужна — медлить нельзя.';
+
+/**
  * Время суток по сообщению пациента. Используется для пост-фильтра allSlots
  * в результатах find_doctors_and_slots / find_services.
  *   morning   06:00–12:00
@@ -507,9 +542,14 @@ export class ChatService implements OnModuleInit {
 
     let reply: string;
     try {
-      // Symptom shortcut only for local DB / infoclinica — for MedFlex the tool loop
-      // handles symptoms via find_doctors with real specialities from the API
-      if (isSymptomMessage(message) && session.misType !== 'medflex') {
+      // Экстренные ситуации (боль в груди, удушье, инсульт, ребёнок проглотил
+      // инородное тело, температура > 39 у ребёнка и т.д.) — не записываем,
+      // отправляем в 103/112. Серверная проверка надёжнее, чем доверять LLM.
+      if (isEmergencyMessage(message)) {
+        reply = EMERGENCY_REPLY;
+      } else if (isSymptomMessage(message) && session.misType !== 'medflex') {
+        // Symptom shortcut only for local DB / infoclinica — for MedFlex the tool loop
+        // handles symptoms via find_doctors with real specialities from the API
         reply = await this.handleSymptomMessage(message, systemWithDate, session, sessionId);
       } else {
         const context: ChatMessage[] = [
