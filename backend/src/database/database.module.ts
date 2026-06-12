@@ -19,6 +19,8 @@ import { ServiceAppointment } from './entities/service-appointment.entity';
 import { Person } from './entities/person.entity';
 import { ClinicPatient } from './entities/clinic-patient.entity';
 import { TokenUsage } from './entities/token-usage.entity';
+import { MessengerContact } from './entities/messenger-contact.entity';
+import { NotificationLog } from './entities/notification-log.entity';
 
 export const DB_ENTITIES = [
   ClinicNet,
@@ -39,6 +41,8 @@ export const DB_ENTITIES = [
   Person,
   ClinicPatient,
   TokenUsage,
+  MessengerContact,
+  NotificationLog,
 ];
 
 @Module({

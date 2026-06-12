@@ -6,6 +6,9 @@ import { McpModule } from './mcp/mcp.module';
 import { LlmModule } from './llm/llm.module';
 import { DatabaseModule } from './database';
 import { ChatModule } from './chat/chat.module';
+import { ClinicConfigModule } from './clinic-config/clinic-config.module';
+import { MessengersModule } from './messengers/messengers.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -14,6 +17,9 @@ import { ChatModule } from './chat/chat.module';
     McpModule,
     LlmModule,
     ChatModule,
+    ClinicConfigModule,
+    MessengersModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
