@@ -119,6 +119,7 @@ class MaxBotInstance {
         provider: 'gigachat',
         clientId,
         clinicNetId: this.cfg.clinicNetId,
+        misType: this.cfg.misType,
       });
       await this.sendText(chatId, response.reply);
     } catch (err) {

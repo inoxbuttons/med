@@ -73,6 +73,7 @@ export class BookingService {
           const clinicNet = await this.clinicNetRepo.findOne({ where: { id: clinicNetId } });
           medflexKey = clinicNet?.medflexKey ?? null;
         }
+        // medflexKey = null → MedflexService сам перенаправит на mock-сервер
         return this.medflexService.executeTool(name, args, clientId, medflexKey, clinicNetId, townId, districtId, patient);
       }
 

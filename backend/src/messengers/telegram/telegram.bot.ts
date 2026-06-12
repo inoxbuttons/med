@@ -99,6 +99,7 @@ class TelegramBotInstance {
         provider: 'gigachat',
         clientId,
         clinicNetId: this.cfg.clinicNetId,
+        misType: this.cfg.misType,
       });
       for (const chunk of splitMessage(response.reply)) {
         await this.safeReply(ctx, chunk);

@@ -249,16 +249,21 @@ export class MedflexService {
     districtId?: number,
     patient?: PatientData,
   ): Promise<unknown> {
+    // Нет ключа → mock-режим: направляем на локальный mock-сервер MedFlex
+    let client: MedflexClient;
     if (!apiKey) {
-      this.logger.warn(`MedFlex tool '${name}' called without API key`);
-      return { error: 'Ключ интеграции MedFlex не настроен. Обратитесь к администратору.' };
+      const mockUrl = process.env.MEDFLEX_MOCK_URL ?? 'http://localhost:3001';
+      this.logger.debug(`MedFlex tool '${name}' → mock server ${mockUrl}`);
+      client = new MedflexClient('mock', mockUrl);
+      if (!lpuGroupId) lpuGroupId = 1;
+      apiKey = 'mock';
+    } else {
+      if (!lpuGroupId) {
+        this.logger.warn(`MedFlex tool '${name}' called without lpuGroupId`);
+        return { error: 'Идентификатор сети клиник не задан.' };
+      }
+      client = new MedflexClient(apiKey);
     }
-    if (!lpuGroupId) {
-      this.logger.warn(`MedFlex tool '${name}' called without lpuGroupId`);
-      return { error: 'Идентификатор сети клиник не задан.' };
-    }
-
-    const client = new MedflexClient(apiKey);
 
     // В гостевом режиме блокируем операции, требующие идентификатор пациента (телефон).
     // cancel_appointment по uuid допускается — он используется внутри сервиса при разрешении конфликтов.

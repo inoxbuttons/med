@@ -24,9 +24,8 @@ export class MedflexClient {
   private readonly baseV1: string;
   private readonly baseV2: string;
 
-  constructor(private readonly apiKey: string) {
-    // Read at construction time so ConfigModule has already loaded .env
-    const base = process.env.MEDFLEX_BASE_URL ?? 'https://api.medflex.ru';
+  constructor(private readonly apiKey: string, baseUrl?: string) {
+    const base = baseUrl ?? process.env.MEDFLEX_BASE_URL ?? 'https://api.medflex.ru';
     this.baseV1 = base;
     this.baseV2 = base;
   }

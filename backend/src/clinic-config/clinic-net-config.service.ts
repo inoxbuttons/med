@@ -7,7 +7,7 @@ import { ClinicNet } from '../database/entities/clinic-net.entity';
 export interface ResolvedClinicConfig {
   clinicNetId: number;
   clinicNetName: string;
-  misType: string | null;
+  misType: 'medflex' | 'infoclinica' | null;
   medflexApiToken: string | null;
   medflexTriggerUrl: string;
   telegramBotToken: string | null;
@@ -45,7 +45,7 @@ export class ClinicNetConfigService implements OnModuleInit {
       this.configs.set(net.id, {
         clinicNetId:      net.id,
         clinicNetName:    net.name,
-        misType:          net.mis ?? null,
+        misType:          (net.mis as 'medflex' | 'infoclinica' | null) ?? null,
         medflexApiToken:  net.medflexKey    ?? envDefaults.medflexApiToken,
         medflexTriggerUrl: envDefaults.medflexTriggerUrl,
         telegramBotToken: net.telegramBotToken ?? envDefaults.telegramBotToken,
