@@ -183,7 +183,7 @@
     if (raw) _encryptedPatient = JSON.parse(raw);
   } catch (e) { /* ignore */ }
   const _isLocal = window.location.protocol === 'file:' ||
-                   (window.location.hostname === 'localhost' && window.location.port === '');
+                   (window.location.hostname === 'localhost' && window.location.port === '3000');
   const API = _isLocal ? 'http://localhost:3000/chat/message' : '/api/chat/message';
   const messagesEl = document.getElementById('messages');
   const input = document.getElementById('userInput');
