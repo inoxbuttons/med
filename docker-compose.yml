@@ -16,6 +16,11 @@ services:
     volumes:
       - ./site:/var/www/site:ro
 
+  medflex-mock:
+    build: ./medflex-mock
+    environment:
+      PORT: 3001
+
   backend:
     build: ./backend
     environment:
@@ -28,9 +33,14 @@ services:
       GIGACHAT_CREDENTIALS: MDE5Y2U2YjEtY2VmNi03NjhhLWIzZGUtZmYxYmZlMDQwMTVlOjVkMmFlMTYyLTljZTEtNDdhMy04ZTJhLTA1MDNhNGIyN2VlOA==
       GIGACHAT_SCOPE: GIGACHAT_API_PERS
       OPENAI_API_KEY: dummy
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      MEDFLEX_MOCK_URL: http://medflex-mock:3001
+      NOTIFICATION_OFFSETS_MINUTES: "60,1440"
     depends_on:
       db:
         condition: service_healthy
+      medflex-mock:
+        condition: service_started
 
   db:
     image: pgvector/pgvector:pg16
@@ -40,7 +50,11 @@ services:
       POSTGRES_DB: med
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./site/med_dump.sql:/docker-entrypoint-initdb.d/med_dump.sql:ro
+      - ./site/med_dump.sql:/docker-entrypoint-initdb.d/01_med_dump.sql:ro
+      - ./backend/src/database/migrations/003_clinic_nets_mis.sql:/docker-entrypoint-initdb.d/02_clinic_nets_mis.sql:ro
+      - ./backend/src/database/migrations/004_clinic_nets_medflex_key.sql:/docker-entrypoint-initdb.d/03_clinic_nets_medflex_key.sql:ro
+      - ./backend/src/database/migrations/005_messengers_and_notifications.sql:/docker-entrypoint-initdb.d/04_messengers_and_notifications.sql:ro
+      - ./backend/src/database/migrations/006_seed_clinic_config.sql:/docker-entrypoint-initdb.d/05_seed_clinic_config.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U root -d med"]
       interval: 5s

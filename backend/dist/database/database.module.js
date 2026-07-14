@@ -28,6 +28,8 @@ const service_appointment_entity_1 = require("./entities/service-appointment.ent
 const person_entity_1 = require("./entities/person.entity");
 const clinic_patient_entity_1 = require("./entities/clinic-patient.entity");
 const token_usage_entity_1 = require("./entities/token-usage.entity");
+const messenger_contact_entity_1 = require("./entities/messenger-contact.entity");
+const notification_log_entity_1 = require("./entities/notification-log.entity");
 exports.DB_ENTITIES = [
     clinic_net_entity_1.ClinicNet,
     clinic_entity_1.Clinic,
@@ -47,6 +49,8 @@ exports.DB_ENTITIES = [
     person_entity_1.Person,
     clinic_patient_entity_1.ClinicPatient,
     token_usage_entity_1.TokenUsage,
+    messenger_contact_entity_1.MessengerContact,
+    notification_log_entity_1.NotificationLog,
 ];
 let DatabaseModule = class DatabaseModule {
 };

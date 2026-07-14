@@ -2,9 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MedflexClient = void 0;
 class MedflexClient {
-    constructor(apiKey) {
+    constructor(apiKey, baseUrl) {
         this.apiKey = apiKey;
-        const base = process.env.MEDFLEX_BASE_URL ?? 'https://api.medflex.ru';
+        const base = baseUrl ?? process.env.MEDFLEX_BASE_URL ?? 'https://api.medflex.ru';
         this.baseV1 = base;
         this.baseV2 = base;
     }

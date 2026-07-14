@@ -15,6 +15,9 @@ const mcp_module_1 = require("./mcp/mcp.module");
 const llm_module_1 = require("./llm/llm.module");
 const database_1 = require("./database");
 const chat_module_1 = require("./chat/chat.module");
+const clinic_config_module_1 = require("./clinic-config/clinic-config.module");
+const messengers_module_1 = require("./messengers/messengers.module");
+const notifications_module_1 = require("./notifications/notifications.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -26,6 +29,9 @@ exports.AppModule = AppModule = __decorate([
             mcp_module_1.McpModule,
             llm_module_1.LlmModule,
             chat_module_1.ChatModule,
+            clinic_config_module_1.ClinicConfigModule,
+            messengers_module_1.MessengersModule,
+            notifications_module_1.NotificationsModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService],

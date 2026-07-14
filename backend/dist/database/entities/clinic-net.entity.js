@@ -40,6 +40,18 @@ __decorate([
     __metadata("design:type", String)
 ], ClinicNet.prototype, "medflexKey", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ name: 'telegram_bot_token', length: 255, nullable: true }),
+    __metadata("design:type", String)
+], ClinicNet.prototype, "telegramBotToken", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: 'max_bot_token', length: 255, nullable: true }),
+    __metadata("design:type", String)
+], ClinicNet.prototype, "maxBotToken", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: 'max_bot_api_url', length: 255, nullable: true }),
+    __metadata("design:type", String)
+], ClinicNet.prototype, "maxBotApiUrl", void 0);
+__decorate([
     (0, typeorm_1.OneToMany)(() => clinic_entity_1.Clinic, (clinic) => clinic.clinicNet),
     __metadata("design:type", Array)
 ], ClinicNet.prototype, "clinics", void 0);

@@ -186,15 +186,22 @@ let MedflexService = MedflexService_1 = class MedflexService {
         return tools;
     }
     async executeTool(name, args, clientId, apiKey, lpuGroupId, townId, districtId, patient) {
+        let client;
         if (!apiKey) {
-            this.logger.warn(`MedFlex tool '${name}' called without API key`);
-            return { error: 'Ключ интеграции MedFlex не настроен. Обратитесь к администратору.' };
+            const mockUrl = process.env.MEDFLEX_MOCK_URL ?? 'http://localhost:3001';
+            this.logger.debug(`MedFlex tool '${name}' → mock server ${mockUrl}`);
+            client = new medflex_client_1.MedflexClient('mock', mockUrl);
+            if (!lpuGroupId)
+                lpuGroupId = 1;
+            apiKey = 'mock';
         }
-        if (!lpuGroupId) {
-            this.logger.warn(`MedFlex tool '${name}' called without lpuGroupId`);
-            return { error: 'Идентификатор сети клиник не задан.' };
+        else {
+            if (!lpuGroupId) {
+                this.logger.warn(`MedFlex tool '${name}' called without lpuGroupId`);
+                return { error: 'Идентификатор сети клиник не задан.' };
+            }
+            client = new medflex_client_1.MedflexClient(apiKey);
         }
-        const client = new medflex_client_1.MedflexClient(apiKey);
         if (!patient && (name === 'get_patient_appointments' || name === 'find_patient_appointment')) {
             return { error: 'Для работы с существующими записями нужно войти в личный кабинет на сайте клиники.' };
         }

@@ -3,7 +3,7 @@ export declare class MedflexClient {
     private readonly apiKey;
     private readonly baseV1;
     private readonly baseV2;
-    constructor(apiKey: string);
+    constructor(apiKey: string, baseUrl?: string);
     private headers;
     private get;
     private post;
