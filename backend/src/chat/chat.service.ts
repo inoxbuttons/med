@@ -27,6 +27,31 @@ import {
 } from './chat.types';
 
 const MAX_TOOL_ITERATIONS = 6;
+const MAX_MESSAGE_LENGTH = 2000;
+
+// Паттерны классических промпт-инъекций (попытки переключить роль / сбросить инструкции).
+// Проверяются до передачи сообщения в LLM.
+const INJECTION_PATTERNS: RegExp[] = [
+  /ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|commands?|prompts?|rules?)/i,
+  /forget\s+(all\s+)?(previous|prior|above|your)\s+(instructions?|commands?|rules?)/i,
+  /disregard\s+(your|all|previous|prior)\s+(instructions?|rules?|commands?)/i,
+  /override\s+(your|all|previous|prior)\s+(instructions?|rules?|commands?)/i,
+  /you\s+are\s+now\s+(a\s+|an\s+)?(?!going|able|ready)/i,
+  /act\s+as\s+(if\s+you\s+(are|were)\s+|a\s+|an\s+)/i,
+  /pretend\s+(you\s+(are|were)|to\s+be)\s+/i,
+  /new\s+(system\s+)?instructions?\s*:/i,
+  /<\s*system\s*>/i,
+  /\[\s*system\s*\]/i,
+  /#+\s*system\s*prompt/i,
+  /\/\*.*system.*\*\//i,
+  /jailbreak/i,
+  /dan\s+mode/i,
+  /developer\s+mode/i,
+];
+
+function isPromptInjection(text: string): boolean {
+  return INJECTION_PATTERNS.some((re) => re.test(text));
+}
 
 // После вызова любого из этих инструментов пациент уже на стадии бронирования —
 // «обзорные» инструменты POST_DISCOVERY_DROP больше не нужны и не отправляются в LLM.
@@ -305,6 +330,18 @@ export class ChatService implements OnModuleInit {
 
   async sendMessage(dto: SendMessageDto): Promise<SendMessageResponse> {
     const { sessionId, message, provider = this.defaultProvider, model, clientId, clinicNetId, misType, townId, districtId, encryptedPatient } = dto;
+
+    // Валидация входящего сообщения
+    if (!message || typeof message !== 'string') {
+      return { sessionId, reply: 'Сообщение не может быть пустым.', history: [] };
+    }
+    if (message.length > MAX_MESSAGE_LENGTH) {
+      return { sessionId, reply: 'Сообщение слишком длинное. Пожалуйста, сократите запрос.', history: [] };
+    }
+    if (isPromptInjection(message)) {
+      this.logger.warn(`Prompt injection attempt in session ${sessionId}: "${message.slice(0, 100)}"`);
+      return { sessionId, reply: 'Я могу помочь только с записью в клинику. Чем могу быть полезен?', history: [] };
+    }
 
     const session = this.getOrCreateSession(sessionId, provider, model);
     // Обновляем идентификаторы сессии если переданы
