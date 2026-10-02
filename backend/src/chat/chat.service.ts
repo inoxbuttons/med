@@ -10,6 +10,7 @@ import { findDayWord, toDateStr } from '../integrations/shared/date-utils';
 import { OpenAiService } from '../llm/openai.service';
 import { GigaChatService } from '../llm/gigachat.service';
 import { QwenService } from '../llm/qwen.service';
+import { Qwen3Service } from '../llm/qwen3.service';
 import { CompletionResult, LlmTool } from '../llm/llm.types';
 import { BookingService } from '../booking/booking.service';
 import { TokenUsage } from '../database/entities/token-usage.entity';
@@ -291,6 +292,7 @@ export class ChatService implements OnModuleInit {
     private readonly openAi: OpenAiService,
     private readonly gigaChat: GigaChatService,
     private readonly qwen: QwenService,
+    private readonly qwen3: Qwen3Service,
     private readonly booking: BookingService,
     @InjectRepository(TokenUsage)
     private readonly tokenUsageRepo: Repository<TokenUsage>,
@@ -318,6 +320,8 @@ export class ChatService implements OnModuleInit {
         return this.gigaChat.complete(context, tools, model, forceText);
       case 'qwen':
         return this.qwen.complete(context, tools, model, forceText);
+      case 'qwen3':
+        return this.qwen3.complete(context, tools, model, forceText);
       case 'openai':
       default:
         return this.openAi.complete(context, forceText ? [] : tools, model);
