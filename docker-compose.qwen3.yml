@@ -1,0 +1,13 @@
+services:
+  nginx:
+    ports:
+      - "8080:80"
+
+  backend:
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      CHAT_DEFAULT_PROVIDER: qwen3
+      QWEN3_API_KEY: ${QWEN3_API_KEY}
+      QWEN3_BASE_URL: ${QWEN3_BASE_URL:-https://foundation-models.api.cloud.ru/v1}
+      QWEN3_MODEL: ${QWEN3_MODEL:-qwen/qwen3-235b-a22b}

@@ -1,4 +1,4 @@
-export type LlmProvider = 'openai' | 'gigachat' | 'qwen';
+export type LlmProvider = 'openai' | 'gigachat' | 'qwen' | 'qwen3';
 export type MessageRole = 'system' | 'user' | 'assistant' | 'function';
 export interface ChatMessage {
     role: MessageRole;

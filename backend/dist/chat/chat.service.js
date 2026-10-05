@@ -26,9 +26,31 @@ const date_utils_1 = require("../integrations/shared/date-utils");
 const openai_service_1 = require("../llm/openai.service");
 const gigachat_service_1 = require("../llm/gigachat.service");
 const qwen_service_1 = require("../llm/qwen.service");
+const qwen3_service_1 = require("../llm/qwen3.service");
 const booking_service_1 = require("../booking/booking.service");
 const token_usage_entity_1 = require("../database/entities/token-usage.entity");
 const MAX_TOOL_ITERATIONS = 6;
+const MAX_MESSAGE_LENGTH = 2000;
+const INJECTION_PATTERNS = [
+    /ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|commands?|prompts?|rules?)/i,
+    /forget\s+(all\s+)?(previous|prior|above|your)\s+(instructions?|commands?|rules?)/i,
+    /disregard\s+(your|all|previous|prior)\s+(instructions?|rules?|commands?)/i,
+    /override\s+(your|all|previous|prior)\s+(instructions?|rules?|commands?)/i,
+    /you\s+are\s+now\s+(a\s+|an\s+)?(?!going|able|ready)/i,
+    /act\s+as\s+(if\s+you\s+(are|were)\s+|a\s+|an\s+)/i,
+    /pretend\s+(you\s+(are|were)|to\s+be)\s+/i,
+    /new\s+(system\s+)?instructions?\s*:/i,
+    /<\s*system\s*>/i,
+    /\[\s*system\s*\]/i,
+    /#+\s*system\s*prompt/i,
+    /\/\*.*system.*\*\//i,
+    /jailbreak/i,
+    /dan\s+mode/i,
+    /developer\s+mode/i,
+];
+function isPromptInjection(text) {
+    return INJECTION_PATTERNS.some((re) => re.test(text));
+}
 const DISCOVERY_TOOLS = new Set(['find_doctors_and_slots', 'find_available_at_time', 'find_services']);
 const POST_DISCOVERY_DROP = new Set(['get_clinics', 'find_services']);
 const COMPACTABLE_SEARCH_TOOLS = new Set([
@@ -199,11 +221,12 @@ const CLINIC_SPECIALISTS = 'Терапевт, Невролог, Кардиоло
     'Аллерголог-иммунолог, Дерматовенеролог, Оториноларинголог, ' +
     'Онколог-маммолог, Нефролог, Проктолог, Врач УЗИ';
 let ChatService = ChatService_1 = class ChatService {
-    constructor(config, openAi, gigaChat, qwen, booking, tokenUsageRepo) {
+    constructor(config, openAi, gigaChat, qwen, qwen3, booking, tokenUsageRepo) {
         this.config = config;
         this.openAi = openAi;
         this.gigaChat = gigaChat;
         this.qwen = qwen;
+        this.qwen3 = qwen3;
         this.booking = booking;
         this.tokenUsageRepo = tokenUsageRepo;
         this.logger = new common_1.Logger(ChatService_1.name);
@@ -220,6 +243,8 @@ let ChatService = ChatService_1 = class ChatService {
                 return this.gigaChat.complete(context, tools, model, forceText);
             case 'qwen':
                 return this.qwen.complete(context, tools, model, forceText);
+            case 'qwen3':
+                return this.qwen3.complete(context, tools, model, forceText);
             case 'openai':
             default:
                 return this.openAi.complete(context, forceText ? [] : tools, model);
@@ -230,6 +255,16 @@ let ChatService = ChatService_1 = class ChatService {
     }
     async sendMessage(dto) {
         const { sessionId, message, provider = this.defaultProvider, model, clientId, clinicNetId, misType, townId, districtId, encryptedPatient } = dto;
+        if (!message || typeof message !== 'string') {
+            return { sessionId, reply: 'Сообщение не может быть пустым.', history: [] };
+        }
+        if (message.length > MAX_MESSAGE_LENGTH) {
+            return { sessionId, reply: 'Сообщение слишком длинное. Пожалуйста, сократите запрос.', history: [] };
+        }
+        if (isPromptInjection(message)) {
+            this.logger.warn(`Prompt injection attempt in session ${sessionId}: "${message.slice(0, 100)}"`);
+            return { sessionId, reply: 'Я могу помочь только с записью в клинику. Чем могу быть полезен?', history: [] };
+        }
         const session = this.getOrCreateSession(sessionId, provider, model);
         if (clientId !== undefined)
             session.clientId = clientId;
@@ -909,11 +944,12 @@ let ChatService = ChatService_1 = class ChatService {
 exports.ChatService = ChatService;
 exports.ChatService = ChatService = ChatService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __param(5, (0, typeorm_1.InjectRepository)(token_usage_entity_1.TokenUsage)),
+    __param(6, (0, typeorm_1.InjectRepository)(token_usage_entity_1.TokenUsage)),
     __metadata("design:paramtypes", [config_1.ConfigService,
         openai_service_1.OpenAiService,
         gigachat_service_1.GigaChatService,
         qwen_service_1.QwenService,
+        qwen3_service_1.Qwen3Service,
         booking_service_1.BookingService,
         typeorm_2.Repository])
 ], ChatService);
