@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { OpenAiService } from '../llm/openai.service';
 import { GigaChatService } from '../llm/gigachat.service';
 import { QwenService } from '../llm/qwen.service';
+import { Qwen3Service } from '../llm/qwen3.service';
 import { BookingService } from '../booking/booking.service';
 import { TokenUsage } from '../database/entities/token-usage.entity';
 import { ChatMessage, SendMessageDto, SendMessageResponse } from './chat.types';
@@ -12,6 +13,7 @@ export declare class ChatService implements OnModuleInit {
     private readonly openAi;
     private readonly gigaChat;
     private readonly qwen;
+    private readonly qwen3;
     private readonly booking;
     private readonly tokenUsageRepo;
     private readonly logger;
@@ -19,7 +21,7 @@ export declare class ChatService implements OnModuleInit {
     private readonly systemPrompt;
     private readonly defaultProvider;
     private readonly SESSION_TTL_MS;
-    constructor(config: ConfigService, openAi: OpenAiService, gigaChat: GigaChatService, qwen: QwenService, booking: BookingService, tokenUsageRepo: Repository<TokenUsage>);
+    constructor(config: ConfigService, openAi: OpenAiService, gigaChat: GigaChatService, qwen: QwenService, qwen3: Qwen3Service, booking: BookingService, tokenUsageRepo: Repository<TokenUsage>);
     private callLlm;
     onModuleInit(): void;
     sendMessage(dto: SendMessageDto): Promise<SendMessageResponse>;

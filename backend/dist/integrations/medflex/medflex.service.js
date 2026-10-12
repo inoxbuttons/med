@@ -187,7 +187,7 @@ let MedflexService = MedflexService_1 = class MedflexService {
     }
     async executeTool(name, args, clientId, apiKey, lpuGroupId, townId, districtId, patient) {
         let client;
-        if (!apiKey) {
+        if (!apiKey || apiKey.startsWith('mock')) {
             const mockUrl = process.env.MEDFLEX_MOCK_URL ?? 'http://localhost:3001';
             this.logger.debug(`MedFlex tool '${name}' → mock server ${mockUrl}`);
             client = new medflex_client_1.MedflexClient('mock', mockUrl);
