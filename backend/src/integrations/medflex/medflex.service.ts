@@ -249,9 +249,9 @@ export class MedflexService {
     districtId?: number,
     patient?: PatientData,
   ): Promise<unknown> {
-    // Нет ключа → mock-режим: направляем на локальный mock-сервер MedFlex
+    // Нет ключа или ключ начинается с 'mock' → mock-режим
     let client: MedflexClient;
-    if (!apiKey) {
+    if (!apiKey || apiKey.startsWith('mock')) {
       const mockUrl = process.env.MEDFLEX_MOCK_URL ?? 'http://localhost:3001';
       this.logger.debug(`MedFlex tool '${name}' → mock server ${mockUrl}`);
       client = new MedflexClient('mock', mockUrl);
