@@ -1307,7 +1307,7 @@ export class LocalDbService {
             patientBirthday: { type: 'string', description: 'Дата рождения пациента YYYY-MM-DD (для гостей)' },
             notes:           { type: 'string', description: 'Дополнительная информация (например, есть ли направление)' },
           },
-          required: ['clinicId'],
+          required: [],
         },
       },
     ];

@@ -9,6 +9,7 @@
     "test:cycle2": "ts-node cycle2-availability.ts",
     "test:cycle3": "ts-node cycle3-multi-turn.ts",
     "test:cycle4": "ts-node cycle4-services-and-complaints.ts",
+    "test:cycle5": "CHAT_API=http://localhost:3002/chat/message ts-node cycle5-new-booking-rules.ts",
     "reset": "node -e \"require('fs').writeFileSync('../medflex-mock/data/appointments.json', '[]'); console.log('appointments.json reset to []')\""
   },
   "devDependencies": {
