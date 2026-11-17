@@ -27,6 +27,22 @@ export class Service {
   @Column({ type: 'text', nullable: true })
   description: string;
 
+  /** Стационарная услуга */
+  @Column({ default: false })
+  stationary: boolean;
+
+  /** Пациент может записаться самостоятельно (false = требуется направление) */
+  @Column({ name: 'self_booking', default: true })
+  selfBooking: boolean;
+
+  /** Выполняется непосредственно на приёме врача */
+  @Column({ name: 'at_doctor_visit', default: false })
+  atDoctorVisit: boolean;
+
+  /** Цена указана «от» */
+  @Column({ name: 'price_from', default: false })
+  priceFrom: boolean;
+
   @OneToMany(() => ServiceByClinic, (sbc) => sbc.service)
   servicesByClinics: ServiceByClinic[];
 }
