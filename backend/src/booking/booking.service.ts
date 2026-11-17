@@ -78,7 +78,7 @@ export class BookingService {
       }
 
       // Локальная БД (misType не задан или неизвестен)
-      return this.localDbService.executeTool(name, args, clientId);
+      return this.localDbService.executeTool(name, args, clientId, _sessionId);
     } catch (err) {
       this.logger.error(`Tool ${name} error: ${String(err)}`);
       return { error: `Ошибка при выполнении ${name}. Пожалуйста, уточни данные и попробуй снова.` };

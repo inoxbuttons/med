@@ -13,6 +13,7 @@ import { Appointment } from '../../database/entities/appointment.entity';
 import { ServiceWorkingHours } from '../../database/entities/service-working-hours.entity';
 import { ServiceException } from '../../database/entities/service-exception.entity';
 import { ServiceAppointment } from '../../database/entities/service-appointment.entity';
+import { OperatorRequest } from '../../database/entities/operator-request.entity';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { ServiceAppointment } from '../../database/entities/service-appointment.
       ServiceWorkingHours,
       ServiceException,
       ServiceAppointment,
+      OperatorRequest,
     ]),
   ],
   providers: [LocalDbService],

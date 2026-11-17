@@ -13,6 +13,7 @@ import { Appointment } from '../../database/entities/appointment.entity';
 import { ServiceWorkingHours } from '../../database/entities/service-working-hours.entity';
 import { ServiceException } from '../../database/entities/service-exception.entity';
 import { ServiceAppointment } from '../../database/entities/service-appointment.entity';
+import { OperatorRequest } from '../../database/entities/operator-request.entity';
 import {
   SERVICE_APPOINTMENT_MINUTES,
   MAX_SLOTS_IN_RESPONSE,
@@ -42,7 +43,20 @@ export interface ServiceInfo {
   id: number;
   name: string;
   direction: string | null;
+  selfBooking: boolean;
+  atDoctorVisit: boolean;
+  stationary: boolean;
+  priceFrom: boolean;
   clinics: { id: number; name: string; price: number | null }[];
+}
+
+export interface ConsultationServiceInfo {
+  id: number;
+  name: string;
+  price: number | null;
+  priceFrom: boolean;
+  clinicId: number;
+  clinicName: string;
 }
 
 export interface SlotGroup {
@@ -110,6 +124,8 @@ export class LocalDbService {
     private readonly serviceExceptionRepo: Repository<ServiceException>,
     @InjectRepository(ServiceAppointment)
     private readonly serviceAppointmentRepo: Repository<ServiceAppointment>,
+    @InjectRepository(OperatorRequest)
+    private readonly operatorRequestRepo: Repository<OperatorRequest>,
   ) {}
 
   // ── Clinics ────────────────────────────────────────────────────────────────
@@ -202,6 +218,10 @@ export class LocalDbService {
       id: s.id,
       name: s.name,
       direction: s.medField?.name ?? null,
+      selfBooking: s.selfBooking,
+      atDoctorVisit: s.atDoctorVisit,
+      stationary: s.stationary,
+      priceFrom: s.priceFrom,
       clinics: (sbcByService.get(s.id) ?? []).map((sbc) => ({
         id: sbc.clinicId,
         name: sbc.clinic.name,
@@ -956,6 +976,91 @@ export class LocalDbService {
     return bookResult;
   }
 
+  // ── Doctor consultation services ───────────────────────────────────────────
+
+  async findDoctorConsultationServices(
+    doctorId: number,
+    clinicId?: number,
+  ): Promise<ConsultationServiceInfo[]> {
+    const doctor = await this.doctorRepo
+      .createQueryBuilder('d')
+      .leftJoin('d.speciality', 'sp')
+      .leftJoin('sp.medField', 'mf')
+      .select(['d.id', 'd.name', 'sp.name', 'sp.medFieldId', 'mf.name'])
+      .where('d.id = :doctorId', { doctorId })
+      .getOne();
+
+    if (!doctor) return [];
+
+    const medFieldId: number | null = (doctor.speciality as any)?.medFieldId ?? null;
+    const lastName = doctor.name.split(' ')[0];
+
+    const qb = this.serviceRepo
+      .createQueryBuilder('s')
+      .innerJoin('services_by_clinics', 'sbc', 'sbc.service_id = s.id')
+      .innerJoin('clinics', 'c', 'c.id = sbc.clinic_id')
+      .where('s.at_doctor_visit = true')
+      .andWhere(
+        medFieldId
+          ? '(s.med_field_id = :medFieldId OR s.name ILIKE :lastName)'
+          : 's.name ILIKE :lastName',
+        { medFieldId, lastName: `%${lastName}%` },
+      );
+
+    if (clinicId) {
+      qb.andWhere('sbc.clinic_id = :clinicId', { clinicId });
+    }
+
+    qb.select([
+      's.id',
+      's.name',
+      's.price_from',
+      'sbc.price',
+      'sbc.clinic_id',
+      'c.name',
+    ]).limit(20);
+
+    const rows = await qb.getRawMany();
+    return rows.map((r) => ({
+      id: r.s_id,
+      name: r.s_name,
+      price: Number(r.sbc_price) || null,
+      priceFrom: r.s_price_from === true || r.s_price_from === 't',
+      clinicId: r.sbc_clinic_id,
+      clinicName: r.c_name,
+    }));
+  }
+
+  // ── Operator requests ──────────────────────────────────────────────────────
+
+  async createOperatorRequest(params: {
+    clinicId?: number;
+    serviceId?: number;
+    doctorId?: number;
+    patientId?: number;
+    patientName?: string;
+    patientPhone?: string;
+    patientBirthday?: string;
+    notes?: string;
+    sessionId?: string;
+  }): Promise<{ id: number; message: string }> {
+    const req = this.operatorRequestRepo.create({
+      clinicId: params.clinicId ?? null,
+      serviceId: params.serviceId ?? null,
+      doctorId: params.doctorId ?? null,
+      patientId: params.patientId ?? null,
+      patientName: params.patientName ?? null,
+      patientPhone: params.patientPhone ?? null,
+      patientBirthday: params.patientBirthday ?? null,
+      notes: params.notes ?? null,
+      sessionId: params.sessionId ?? null,
+      requestType: 'service_booking',
+      status: 'new',
+    });
+    const saved = await this.operatorRequestRepo.save(req);
+    return { id: saved.id, message: 'Заявка принята. Администратор свяжется с вами в ближайшее время.' };
+  }
+
   // ── Tool definitions ───────────────────────────────────────────────────────
 
   getTools(): LlmTool[] {
@@ -1166,6 +1271,45 @@ export class LocalDbService {
           required: ['clinicId', 'startTime'],
         },
       },
+      {
+        name: 'get_doctor_consultation_services',
+        description:
+          'Возвращает список услуг приёма и консультаций для конкретного врача в клинике. ' +
+          'Вызывай когда: (1) пациент спрашивает цену приёма у врача; ' +
+          '(2) после выбора слота к врачу — чтобы уточнить тип приёма (первичный/повторный) и показать цену в сводке. ' +
+          'Результат содержит id, name, price, priceFrom, clinicId, clinicName. ' +
+          'Если результат пустой — цена для данного врача не определена.',
+        parameters: {
+          type: 'object',
+          properties: {
+            doctorId: { type: 'number', description: 'ID врача из find_doctors или find_doctors_and_slots' },
+            clinicId: { type: 'number', description: 'ID клиники (необязательно)' },
+          },
+          required: ['doctorId'],
+        },
+      },
+      {
+        name: 'create_operator_request',
+        description:
+          'Создаёт заявку для оператора (администратора клиники) для обратной связи. ' +
+          'Используй когда услуга требует направления врача (self_booking: false), направление есть, ' +
+          'но процедура НЕ выполняется на приёме (at_doctor_visit: false). ' +
+          'Для авторизованного пациента — вызывай сразу (данные есть в системе). ' +
+          'Для гостя — сначала спроси ФИО, телефон, дату рождения, затем вызывай с этими данными. ' +
+          'После вызова скажи пациенту: «Ваша заявка принята. Администратор свяжется с вами в ближайшее время.»',
+        parameters: {
+          type: 'object',
+          properties: {
+            clinicId:        { type: 'number', description: 'ID клиники' },
+            serviceId:       { type: 'number', description: 'ID услуги из find_services' },
+            patientName:     { type: 'string', description: 'ФИО пациента (для гостей)' },
+            patientPhone:    { type: 'string', description: 'Телефон пациента (для гостей)' },
+            patientBirthday: { type: 'string', description: 'Дата рождения пациента YYYY-MM-DD (для гостей)' },
+            notes:           { type: 'string', description: 'Дополнительная информация (например, есть ли направление)' },
+          },
+          required: ['clinicId'],
+        },
+      },
     ];
   }
 
@@ -1175,6 +1319,7 @@ export class LocalDbService {
     name: string,
     args: Record<string, any>,
     clientId?: number,
+    sessionId?: string,
   ): Promise<unknown> {
     switch (name) {
       case 'get_clinics':
@@ -1262,6 +1407,19 @@ export class LocalDbService {
         }
         return this.bookAppointment(bookArgs);
       }
+      case 'get_doctor_consultation_services':
+        return this.findDoctorConsultationServices(args.doctorId, args.clinicId);
+      case 'create_operator_request':
+        return this.createOperatorRequest({
+          clinicId: args.clinicId,
+          serviceId: args.serviceId,
+          patientId: clientId,
+          patientName: args.patientName,
+          patientPhone: args.patientPhone,
+          patientBirthday: args.patientBirthday,
+          notes: args.notes,
+          sessionId,
+        });
       default:
         return { error: `Unknown tool: ${name}` };
     }
