@@ -1,6 +1,8 @@
 # Сеть «XXI Век», Таганрог (демо-стенд 21vek).
 clinicNetId: 2
 displayName: «XXI Век»
+# Новый движок (жёсткий пайплайн + гибридный поиск). Откат — engine: tools.
+engine: pipeline
 
 # Общие синонимы (узи, мрт, кт, экг, фгдс, лор …) — в core/profile.yaml.
 synonyms:
