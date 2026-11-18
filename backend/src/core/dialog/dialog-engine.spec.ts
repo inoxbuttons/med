@@ -29,11 +29,15 @@ const CATALOG: Doc[] = [
     kind: 'service', id: '101', title: 'Ультразвуковое исследование щитовидной железы',
     meta: { selfBooking: true, atDoctorVisit: false, direction: 'УЗИ', clinics: [{ id: 3, name: 'Русское поле', price: 1500 }], clinicIds: [3] },
   },
+  {
+    kind: 'service', id: '102', title: 'Консультация невролога первичная',
+    meta: { selfBooking: true, atDoctorVisit: true, direction: 'Невролог', clinics: [{ id: 3, name: 'Русское поле', price: 2000 }], clinicIds: [3] },
+  },
 ];
 
 const fakeSearch = {
   async search(_net: number, query: string, opts: { kinds: string[] }): Promise<SearchHit[]> {
-    const words = query.toLowerCase().split(/\s+/).filter((w) => w.length > 2).map((w) => w.slice(0, 5));
+    const words = query.toLowerCase().split(/\s+/).filter((w) => w.length > 2).map((w) => (w === 'узи' ? 'ультр' : w.slice(0, 5)));
     return CATALOG.filter((d) => opts.kinds.includes(d.kind))
       .map((d) => ({ d, n: words.filter((w) => d.title.toLowerCase().includes(w)).length }))
       .filter((x) => x.n > 0)
@@ -269,6 +273,55 @@ describe('DialogEngine: сценарии', () => {
     const r = await say('Хочу записаться на услугу "Ультразвуковое исследование щитовидной железы"', 'book:service:Ультразвуковое исследование щитовидной железы');
     expect(r.text).toContain('Завтра 09:00');
     expect(llmCalls).toEqual([]);
+  });
+});
+
+describe('DialogEngine: вопрос посреди записи', () => {
+  it('кнопка консультации, затем «на субботу есть места?» — слоты субботы того же врача, не агент', async () => {
+    const { say, llmCalls, session } = setup({
+      'на субботу есть места?': { goal: 'info', question: 'schedule', entities: { dayOfWeek: 'sat' } },
+    });
+    const r1 = await say('Хочу записаться на услугу "Консультация невролога первичная"', 'book:service:Консультация невролога первичная');
+    expect(r1.text).not.toContain('выполняется на приёме');
+    expect(r1.text).toContain('14:30');
+    const r2 = await say('на субботу есть места?');
+    expect(r2.text).toContain('Суббота, 21 ноября');
+    expect(llmCalls.filter((c) => c.startsWith('agent:'))).toEqual([]);
+    expect(session.state.goal).toBe('book');
+  });
+});
+
+describe('DialogEngine: модель повторяет выбранное из контекста', () => {
+  it('кнопка «Консультация невролога первичная», затем день — модель вернула «консультация невролога»: без переспроса услуги', async () => {
+    const { say, session } = setup({
+      'хочу в субботу': { goal: 'book', entities: { serviceQuery: 'консультация невролога', speciality: 'невролог', dayOfWeek: 'sat' } },
+    });
+    await say('Хочу записаться на услугу "Консультация невролога первичная"', 'book:service:Консультация невролога первичная');
+    const r = await say('хочу в субботу');
+    expect(r.text).not.toContain('Уточните');
+    expect(r.text).toContain('Суббота, 21 ноября');
+    expect(session.state.entities.serviceQuery).toBe('Консультация невролога первичная');
+  });
+
+  it('синоним выбранной услуги («узи щитовидки») — выбор не сбрасывается (проверка поиском)', async () => {
+    const { say, session } = setup({
+      'а в субботу можно?': { goal: 'book', entities: { serviceQuery: 'узи щитовидки', dayOfWeek: 'sat' } },
+    });
+    await say('Хочу записаться на услугу "Ультразвуковое исследование щитовидной железы"', 'book:service:Ультразвуковое исследование щитовидной железы');
+    const r = await say('а в субботу можно?');
+    expect(r.text).not.toContain('Уточните');
+    expect(session.state.target).toMatchObject({ kind: 'service', serviceId: 101 });
+    expect(session.state.entities.serviceQuery).toBe('Ультразвуковое исследование щитовидной железы');
+  });
+
+  it('другая услуга при выбранной — смена выбора', async () => {
+    const { say, session } = setup({
+      'а лучше на УЗИ щитовидной железы': { goal: 'book', entities: { serviceQuery: 'УЗИ щитовидной железы' } },
+    });
+    await say('Хочу записаться на услугу "Консультация невролога первичная"', 'book:service:Консультация невролога первичная');
+    const r = await say('а лучше на УЗИ щитовидной железы');
+    expect(r.text).toContain('Завтра 09:00');
+    expect(session.state.target).toMatchObject({ kind: 'service', name: 'Ультразвуковое исследование щитовидной железы' });
   });
 });
 

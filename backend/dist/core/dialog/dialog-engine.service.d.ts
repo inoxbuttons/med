@@ -40,6 +40,7 @@ export declare class DialogEngine {
     private process;
     private advance;
     private finish;
+    private withoutRestatedSubject;
     private mergeEntities;
     private applyOption;
     private onReply;

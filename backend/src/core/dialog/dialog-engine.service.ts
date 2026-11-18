@@ -16,6 +16,8 @@ import {
   appointmentLabel, choiceButtons, numbered, QuickReply, Reply, shortName, slotLabel, targetLabel, Templates, visitLabel, YES_NO,
 } from './render';
 import { CatalogLookup, resolveTarget } from './target-resolver';
+import { normalize, sameStem, words } from '../catalog/text';
+import { relevantHits, SearchHit } from '../catalog/catalog-search.service';
 
 /** Зависимости движка — интерфейсы, чтобы сценарии тестировались без БД и модели. */
 export interface EngineDeps {
@@ -115,6 +117,7 @@ export class DialogEngine {
 
   private async process(turn: Turn): Promise<Reply> {
     const { frame, state, T } = turn;
+    if (frame.entities) frame.entities = await this.withoutRestatedSubject(turn, frame.entities);
     const exp = state.expectation;
     const shown = state.options;
     state.expectation = { kind: 'none' };
@@ -168,7 +171,8 @@ export class DialogEngine {
       return this.freeAnswer(turn);
     }
     if (goal && goal !== state.goal) {
-      const keep = state.goal === 'info' && goal === 'book';
+      // Запись ↔ вопрос по тому же врачу/услуге («на четверг есть места?») — контекст не терять.
+      const keep = (state.goal === 'info' && goal === 'book') || (state.goal === 'book' && goal === 'info');
       const fresh = emptyState();
       fresh.goal = goal;
       if (keep) {
@@ -227,6 +231,31 @@ export class DialogEngine {
     this.mergeEntities(turn, next.entities ?? {});
     turn.prefix.push(reply.text);
     return this.advance(turn, { kind: 'none' });
+  }
+
+  /**
+   * Модель часто повторяет из контекста уже выбранное («консультация флеболога» при выбранной
+   * «Консультации врача-флеболога повторной», «узи щитовидки» при выбранном УЗИ щитовидной железы) —
+   * это не новая цель, выбор не сбрасывать. Сначала сравнение слов, иначе — гибридный поиск:
+   * если текущий выбор среди релевантной выдачи по названному, пациент говорит о том же.
+   */
+  private async withoutRestatedSubject(turn: Turn, e: FrameEntities): Promise<FrameEntities> {
+    const s = turn.state;
+    if (!s.target) return e;
+    const known = chosenWords(s);
+    const out = { ...e };
+    for (const k of SUBJECT_KEYS) {
+      const v = out[k];
+      if (typeof v !== 'string' || !v.trim()) continue;
+      if (restatesByWords(v, known)) { delete out[k]; continue; }
+      try {
+        const hits = await this.deps.search.search(turn.session.clinicNetId, v, { kinds: SUBJECT_KINDS[k], limit: 10 });
+        if (relevantHits(hits).some((h) => hitIsChosen(h, s))) delete out[k];
+      } catch (err) {
+        this.logger.warn(`restated check: ${String(err)}`);
+      }
+    }
+    return out;
   }
 
   private mergeEntities(turn: Turn, e: FrameEntities, edit?: string[]): void {
@@ -345,7 +374,8 @@ export class DialogEngine {
     if (s.target.kind === 'service') {
       const svc = s.target;
       if (svc.atDoctorVisit && svc.direction) {
-        turn.prefix.push(T.t('atDoctorVisit', { service: svc.name }));
+        // Сама услуга — приём/консультация: пояснение «выполняется на приёме» лишнее.
+        if (!/^(консультац|при[её]м|осмотр)/i.test(svc.name.trim())) turn.prefix.push(T.t('atDoctorVisit', { service: svc.name }));
         const r = await resolveTarget({ speciality: svc.direction, child: s.entities.child }, { clinicNetId: turn.session.clinicNetId, search: this.deps.search, profile });
         if (r.kind === 'single') s.target = r.target;
       } else if (!svc.selfBooking) {
@@ -580,7 +610,10 @@ export class DialogEngine {
       return this.finish(turn, { text: '' });
     }
 
-    const r = await resolveTarget(s.entities, { clinicNetId: turn.session.clinicNetId, search: this.deps.search, profile });
+    // Цель уже выбрана (кнопкой или раньше в диалоге) — вопрос о ней, а не новый поиск.
+    const r: Awaited<ReturnType<typeof resolveTarget>> = s.target
+      ? { kind: 'single', target: s.target }
+      : await resolveTarget(s.entities, { clinicNetId: turn.session.clinicNetId, search: this.deps.search, profile });
     if (r.kind === 'missing') return this.freeAnswer(turn);
     if (r.kind === 'none') return this.finish(turn, { text: T.t('notFound', { query: r.query }) });
     if (r.kind === 'choice' || r.kind === 'areas') {
@@ -807,6 +840,35 @@ export function payloadFrame(payload?: string): Frame | null {
   const doc = /^book:doctor:(.+)$/.exec(payload);
   if (doc) return { goal: 'book', subject: 'doctor', entities: { doctorName: doc[1] } };
   return null;
+}
+
+const SUBJECT_KEYS = ['doctorName', 'speciality', 'serviceQuery'] as const;
+const SUBJECT_KINDS: Record<(typeof SUBJECT_KEYS)[number], Array<'doctor' | 'speciality' | 'service'>> = {
+  doctorName: ['doctor'],
+  speciality: ['speciality'],
+  serviceQuery: ['service', 'speciality'],
+};
+
+/** Слова текущего выбора: цель и то, чем её назвали (название услуги с кнопки остаётся, даже если цель стала врачом). */
+function chosenWords(s: DialogState): string[] {
+  const t = s.target!;
+  const label = t.kind === 'service' ? t.name : t.kind === 'doctor' ? `${t.name} ${t.speciality ?? ''}` : t.title;
+  return words([s.entities.serviceQuery, s.entities.speciality, s.entities.doctorName, label].filter(Boolean).join(' '));
+}
+
+/** Все слова названного уже есть в текущем выборе — без поиска. */
+function restatesByWords(value: string, known: string[]): boolean {
+  const ws = words(value).filter((w) => w.length >= 3);
+  return ws.length > 0 && ws.every((w) => known.some((k) => k === w || sameStem(k, w)));
+}
+
+/** Выдача поиска указывает на текущий выбор: та же услуга/врач/специальность или услуга, выбранная кнопкой. */
+function hitIsChosen(h: SearchHit, s: DialogState): boolean {
+  const t = s.target!;
+  if (t.kind === 'service' && h.kind === 'service' && h.entityId === String(t.serviceId)) return true;
+  if (t.kind === 'doctor' && h.kind === 'doctor' && h.entityId === String(t.doctorId)) return true;
+  if (t.kind === 'speciality' && h.kind === 'speciality' && normalize(h.title) === normalize(t.title)) return true;
+  return !!s.entities.serviceQuery && h.kind === 'service' && normalize(h.title) === normalize(s.entities.serviceQuery);
 }
 
 function onlyPatientData(f: Frame): boolean {

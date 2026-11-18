@@ -22,6 +22,8 @@ const guards_1 = require("./guards");
 const render_1 = require("./render");
 Object.defineProperty(exports, "shortName", { enumerable: true, get: function () { return render_1.shortName; } });
 const target_resolver_1 = require("./target-resolver");
+const text_1 = require("../catalog/text");
+const catalog_search_service_1 = require("../catalog/catalog-search.service");
 const MAX_DOCTORS_FOR_SLOTS = 10;
 const MAX_SLOT_OPTIONS = 8;
 let DialogEngine = DialogEngine_1 = class DialogEngine {
@@ -77,6 +79,8 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
     }
     async process(turn) {
         const { frame, state, T } = turn;
+        if (frame.entities)
+            frame.entities = await this.withoutRestatedSubject(turn, frame.entities);
         const exp = state.expectation;
         const shown = state.options;
         state.expectation = { kind: 'none' };
@@ -119,7 +123,7 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
             return this.freeAnswer(turn);
         }
         if (goal && goal !== state.goal) {
-            const keep = state.goal === 'info' && goal === 'book';
+            const keep = (state.goal === 'info' && goal === 'book') || (state.goal === 'book' && goal === 'info');
             const fresh = (0, dialog_state_1.emptyState)();
             fresh.goal = goal;
             if (keep) {
@@ -172,6 +176,31 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
         this.mergeEntities(turn, next.entities ?? {});
         turn.prefix.push(reply.text);
         return this.advance(turn, { kind: 'none' });
+    }
+    async withoutRestatedSubject(turn, e) {
+        const s = turn.state;
+        if (!s.target)
+            return e;
+        const known = chosenWords(s);
+        const out = { ...e };
+        for (const k of SUBJECT_KEYS) {
+            const v = out[k];
+            if (typeof v !== 'string' || !v.trim())
+                continue;
+            if (restatesByWords(v, known)) {
+                delete out[k];
+                continue;
+            }
+            try {
+                const hits = await this.deps.search.search(turn.session.clinicNetId, v, { kinds: SUBJECT_KINDS[k], limit: 10 });
+                if ((0, catalog_search_service_1.relevantHits)(hits).some((h) => hitIsChosen(h, s)))
+                    delete out[k];
+            }
+            catch (err) {
+                this.logger.warn(`restated check: ${String(err)}`);
+            }
+        }
+        return out;
     }
     mergeEntities(turn, e, edit) {
         const s = turn.state;
@@ -293,7 +322,8 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
         if (s.target.kind === 'service') {
             const svc = s.target;
             if (svc.atDoctorVisit && svc.direction) {
-                turn.prefix.push(T.t('atDoctorVisit', { service: svc.name }));
+                if (!/^(консультац|при[её]м|осмотр)/i.test(svc.name.trim()))
+                    turn.prefix.push(T.t('atDoctorVisit', { service: svc.name }));
                 const r = await (0, target_resolver_1.resolveTarget)({ speciality: svc.direction, child: s.entities.child }, { clinicNetId: turn.session.clinicNetId, search: this.deps.search, profile });
                 if (r.kind === 'single')
                     s.target = r.target;
@@ -516,7 +546,9 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
             }
             return this.finish(turn, { text: '' });
         }
-        const r = await (0, target_resolver_1.resolveTarget)(s.entities, { clinicNetId: turn.session.clinicNetId, search: this.deps.search, profile });
+        const r = s.target
+            ? { kind: 'single', target: s.target }
+            : await (0, target_resolver_1.resolveTarget)(s.entities, { clinicNetId: turn.session.clinicNetId, search: this.deps.search, profile });
         if (r.kind === 'missing')
             return this.freeAnswer(turn);
         if (r.kind === 'none')
@@ -750,6 +782,31 @@ function payloadFrame(payload) {
     if (doc)
         return { goal: 'book', subject: 'doctor', entities: { doctorName: doc[1] } };
     return null;
+}
+const SUBJECT_KEYS = ['doctorName', 'speciality', 'serviceQuery'];
+const SUBJECT_KINDS = {
+    doctorName: ['doctor'],
+    speciality: ['speciality'],
+    serviceQuery: ['service', 'speciality'],
+};
+function chosenWords(s) {
+    const t = s.target;
+    const label = t.kind === 'service' ? t.name : t.kind === 'doctor' ? `${t.name} ${t.speciality ?? ''}` : t.title;
+    return (0, text_1.words)([s.entities.serviceQuery, s.entities.speciality, s.entities.doctorName, label].filter(Boolean).join(' '));
+}
+function restatesByWords(value, known) {
+    const ws = (0, text_1.words)(value).filter((w) => w.length >= 3);
+    return ws.length > 0 && ws.every((w) => known.some((k) => k === w || (0, text_1.sameStem)(k, w)));
+}
+function hitIsChosen(h, s) {
+    const t = s.target;
+    if (t.kind === 'service' && h.kind === 'service' && h.entityId === String(t.serviceId))
+        return true;
+    if (t.kind === 'doctor' && h.kind === 'doctor' && h.entityId === String(t.doctorId))
+        return true;
+    if (t.kind === 'speciality' && h.kind === 'speciality' && (0, text_1.normalize)(h.title) === (0, text_1.normalize)(t.title))
+        return true;
+    return !!s.entities.serviceQuery && h.kind === 'service' && (0, text_1.normalize)(h.title) === (0, text_1.normalize)(s.entities.serviceQuery);
 }
 function onlyPatientData(f) {
     const keys = Object.entries(f.entities ?? {}).filter(([, v]) => v !== undefined).map(([k]) => k);
