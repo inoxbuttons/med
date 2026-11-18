@@ -14,6 +14,7 @@ exports.Qwen3Service = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const openai_1 = require("openai");
+const llm_types_1 = require("./llm.types");
 let Qwen3Service = Qwen3Service_1 = class Qwen3Service {
     constructor(config) {
         this.config = config;
@@ -23,7 +24,7 @@ let Qwen3Service = Qwen3Service_1 = class Qwen3Service {
         this.client = new openai_1.default({ apiKey, baseURL });
         this.defaultModel = this.config.get('QWEN3_MODEL', 'qwen/qwen3-235b-a22b');
     }
-    async complete(messages, tools = [], model, forceText = false) {
+    async complete(messages, tools = [], model, forceText = false, thinking) {
         const converted = messages.map((m) => {
             if (m.role === 'function') {
                 return { role: 'user', content: `[Tool result for ${m.name}]: ${m.content}` };
@@ -34,6 +35,9 @@ let Qwen3Service = Qwen3Service_1 = class Qwen3Service {
             model: model ?? this.defaultModel,
             messages: converted,
         };
+        if (thinking === false) {
+            params.chat_template_kwargs = { enable_thinking: false };
+        }
         if (tools.length > 0 && !forceText) {
             params.tools = tools.map((t) => ({
                 type: 'function',
@@ -62,6 +66,23 @@ let Qwen3Service = Qwen3Service_1 = class Qwen3Service {
             return { type: 'tool_call', toolName: tc.name, toolArgs: args, usage };
         }
         return { type: 'text', content: choice.message.content ?? '', usage };
+    }
+    async completeJson(req) {
+        const params = {
+            model: req.model ?? this.defaultModel,
+            temperature: 0,
+            messages: req.messages
+                .filter((m) => m.role !== 'function')
+                .map((m) => ({ role: m.role, content: m.content })),
+            response_format: { type: 'json_object' },
+            chat_template_kwargs: { enable_thinking: false },
+        };
+        const response = await this.client.chat.completions.create(params);
+        const raw = response.choices[0]?.message?.content ?? '';
+        const usage = response.usage
+            ? { promptTokens: response.usage.prompt_tokens, completionTokens: response.usage.completion_tokens, totalTokens: response.usage.total_tokens }
+            : undefined;
+        return { data: (0, llm_types_1.parseJsonObject)(raw), raw, usage };
     }
 };
 exports.Qwen3Service = Qwen3Service;

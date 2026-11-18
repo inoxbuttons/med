@@ -16,6 +16,8 @@ const app_service_1 = require("./app.service");
 const mcp_module_1 = require("./mcp/mcp.module");
 const llm_module_1 = require("./llm/llm.module");
 const database_1 = require("./database");
+const core_module_1 = require("./core/core.module");
+const catalog_module_1 = require("./core/catalog/catalog.module");
 const chat_module_1 = require("./chat/chat.module");
 const clinic_config_module_1 = require("./clinic-config/clinic-config.module");
 const messengers_module_1 = require("./messengers/messengers.module");
@@ -29,6 +31,8 @@ exports.AppModule = AppModule = __decorate([
             config_1.ConfigModule.forRoot({ isGlobal: true }),
             throttler_1.ThrottlerModule.forRoot([{ ttl: 60_000, limit: 30 }]),
             database_1.DatabaseModule,
+            core_module_1.CoreModule,
+            catalog_module_1.CatalogModule,
             mcp_module_1.McpModule,
             llm_module_1.LlmModule,
             chat_module_1.ChatModule,

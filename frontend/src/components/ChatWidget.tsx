@@ -14,6 +14,7 @@ import './markdown.css';
 
 import type { ChatMessage, LlmProvider } from '../types/chat';
 import { sendMessage } from '../services/api';
+import type { QuickReply } from '../services/api';
 
 interface Props {
   sessionId: string;
@@ -36,9 +37,11 @@ export function ChatWidget({
 }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isTyping, setIsTyping] = useState(false);
+  const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
 
   const handleSend = useCallback(
-    async (text: string) => {
+    async (text: string, payload?: string) => {
+      setQuickReplies([]);
       const userMsg: ChatMessage = {
         id: makeId(),
         text,
@@ -50,7 +53,8 @@ export function ChatWidget({
       setIsTyping(true);
 
       try {
-        const data = await sendMessage(sessionId, text, provider, model);
+        const data = await sendMessage(sessionId, text, provider, model, payload);
+        setQuickReplies(data.quickReplies ?? []);
 
         setMessages((prev) => [
           ...prev,
@@ -116,11 +120,26 @@ export function ChatWidget({
 
           <MessageInput
             placeholder={placeholder}
-            onSend={handleSend}
+            onSend={(_html, text) => handleSend(text)}
             attachButton={false}
           />
         </ChatContainer>
       </MainContainer>
+      {quickReplies.length > 0 && (
+        <div className="quick-replies" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '8px 12px' }}>
+          {quickReplies.map((q) => (
+            <button
+              key={`${q.label}:${q.payload ?? ''}`}
+              type="button"
+              disabled={isTyping}
+              onClick={() => handleSend(q.label, q.payload)}
+              style={{ padding: '6px 12px', borderRadius: 16, border: '1px solid #2493f9', background: '#fff', color: '#2493f9', cursor: 'pointer' }}
+            >
+              {q.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

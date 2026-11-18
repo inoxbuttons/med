@@ -18,11 +18,11 @@ function dayName(dateStr) {
 const WEEKDAY_INDEX = {
     понедельник: 1, вторник: 2, среда: 3, четверг: 4, пятница: 5, суббота: 6, воскресенье: 7,
 };
-function nextWeekdayDate(canonical, weekOffset = 0) {
+function nextWeekdayDate(canonical, weekOffset = 0, now = new Date()) {
     const target = WEEKDAY_INDEX[canonical];
     if (target === undefined)
         return null;
-    const today = new Date();
+    const today = new Date(now);
     today.setHours(0, 0, 0, 0);
     const jsDay = today.getDay();
     const currentRu = jsDay === 0 ? 7 : jsDay;

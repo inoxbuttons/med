@@ -49,6 +49,14 @@ __decorate([
     __metadata("design:type", Number)
 ], TokenUsage.prototype, "totalTokens", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ length: 20, nullable: true }),
+    __metadata("design:type", String)
+], TokenUsage.prototype, "task", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: 'prompt_hash', length: 12, nullable: true }),
+    __metadata("design:type", String)
+], TokenUsage.prototype, "promptHash", void 0);
+__decorate([
     (0, typeorm_1.CreateDateColumn)({ name: 'created_at' }),
     __metadata("design:type", Date)
 ], TokenUsage.prototype, "createdAt", void 0);

@@ -14,6 +14,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 var BookingService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BookingService = void 0;
+exports.selectRelevant = selectRelevant;
 const common_1 = require("@nestjs/common");
 const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
@@ -21,12 +22,14 @@ const clinic_net_entity_1 = require("../database/entities/clinic-net.entity");
 const infoclinica_service_1 = require("../integrations/infoclinica/infoclinica.service");
 const medflex_service_1 = require("../integrations/medflex/medflex.service");
 const local_db_service_1 = require("../integrations/local/local-db.service");
+const catalog_search_service_1 = require("../core/catalog/catalog-search.service");
 let BookingService = BookingService_1 = class BookingService {
-    constructor(clinicNetRepo, localDbService, infoclinicaService, medflexService) {
+    constructor(clinicNetRepo, localDbService, infoclinicaService, medflexService, catalogSearch) {
         this.clinicNetRepo = clinicNetRepo;
         this.localDbService = localDbService;
         this.infoclinicaService = infoclinicaService;
         this.medflexService = medflexService;
+        this.catalogSearch = catalogSearch;
         this.logger = new common_1.Logger(BookingService_1.name);
     }
     checkPatientTimeConflict(clientId, startTime) {
@@ -53,12 +56,28 @@ let BookingService = BookingService_1 = class BookingService {
                 }
                 return this.medflexService.executeTool(name, args, clientId, medflexKey, clinicNetId, townId, districtId, patient);
             }
-            return this.localDbService.executeTool(name, args, clientId);
+            if (name === 'find_services' && clinicNetId && (await this.catalogSearch.hasIndex(clinicNetId, 'service'))) {
+                return this.findServicesIndexed(clinicNetId, String(args.query ?? ''), args.clinicId);
+            }
+            return this.localDbService.executeTool(name, args, clientId, _sessionId, clinicNetId);
         }
         catch (err) {
             this.logger.error(`Tool ${name} error: ${String(err)}`);
             return { error: `Ошибка при выполнении ${name}. Пожалуйста, уточни данные и попробуй снова.` };
         }
+    }
+    async findServicesIndexed(clinicNetId, query, clinicId) {
+        const hits = await this.catalogSearch.search(clinicNetId, query, { kinds: ['service'], clinicId, limit: 40 });
+        return selectRelevant(hits, 20).map((h) => ({
+            id: Number(h.entityId),
+            name: h.title,
+            direction: h.meta.direction ?? null,
+            selfBooking: !!h.meta.selfBooking,
+            atDoctorVisit: !!h.meta.atDoctorVisit,
+            stationary: !!h.meta.stationary,
+            priceFrom: !!h.meta.priceFrom,
+            clinics: (h.meta.clinics ?? []).filter((c) => !clinicId || c.id === clinicId),
+        }));
     }
 };
 exports.BookingService = BookingService;
@@ -68,6 +87,10 @@ exports.BookingService = BookingService = BookingService_1 = __decorate([
     __metadata("design:paramtypes", [typeorm_2.Repository,
         local_db_service_1.LocalDbService,
         infoclinica_service_1.InfclinicaService,
-        medflex_service_1.MedflexService])
+        medflex_service_1.MedflexService,
+        catalog_search_service_1.CatalogSearch])
 ], BookingService);
+function selectRelevant(hits, limit) {
+    return (0, catalog_search_service_1.relevantHits)(hits).slice(0, limit);
+}
 //# sourceMappingURL=booking.service.js.map

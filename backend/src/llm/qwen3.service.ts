@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { ChatMessage } from '../chat/chat.types';
-import { CompletionResult, LlmTool, LlmUsage } from './llm.types';
+import { CompletionResult, JsonCompletionRequest, JsonCompletionResult, LlmTool, LlmUsage, parseJsonObject } from './llm.types';
 
 /**
  * Qwen3-235B-A22B через OpenAI-compatible endpoint cloud.ru Foundation Models.
@@ -26,6 +26,7 @@ export class Qwen3Service {
     tools: LlmTool[] = [],
     model?: string,
     forceText = false,
+    thinking?: boolean,
   ): Promise<CompletionResult> {
     const converted = messages.map((m) => {
       if (m.role === 'function') {
@@ -38,6 +39,9 @@ export class Qwen3Service {
       model: model ?? this.defaultModel,
       messages: converted,
     };
+    if (thinking === false) {
+      (params as unknown as Record<string, unknown>).chat_template_kwargs = { enable_thinking: false };
+    }
 
     if (tools.length > 0 && !forceText) {
       params.tools = tools.map((t) => ({
@@ -69,5 +73,30 @@ export class Qwen3Service {
     }
 
     return { type: 'text', content: choice.message.content ?? '', usage };
+  }
+
+  /**
+   * Ответ JSON-объектом. Режим рассуждений выключен: на разборе реплики он тратит
+   * тысячи токенов и не улучшает результат (замер 2026-11-18: 10 971 токен против 45).
+   */
+  async completeJson(req: JsonCompletionRequest): Promise<JsonCompletionResult> {
+    const params = {
+      model: req.model ?? this.defaultModel,
+      temperature: 0,
+      messages: req.messages
+        .filter((m) => m.role !== 'function')
+        .map((m) => ({ role: m.role as 'system' | 'user' | 'assistant', content: m.content })),
+      // json_object, а не json_schema: на cloud.ru режим json_schema обрывает ответ после
+      // первых полей (замер 2026-11-18: {"goal","subject"} без entities). Формат задаёт промпт,
+      // проверка — zod-схемой на нашей стороне.
+      response_format: { type: 'json_object' },
+      chat_template_kwargs: { enable_thinking: false },
+    };
+    const response = await this.client.chat.completions.create(params as unknown as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming);
+    const raw = response.choices[0]?.message?.content ?? '';
+    const usage: LlmUsage | undefined = response.usage
+      ? { promptTokens: response.usage.prompt_tokens, completionTokens: response.usage.completion_tokens, totalTokens: response.usage.total_tokens }
+      : undefined;
+    return { data: parseJsonObject(raw), raw, usage };
   }
 }

@@ -1,5 +1,3 @@
-import * as fs from 'fs';
-import * as path from 'path';
 import * as crypto from 'crypto';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -7,10 +5,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { isPlaceholderValue, isMissingPhone, isMissingBirthday } from '../integrations/shared/patient-data-utils';
 import { findDayWord, toDateStr } from '../integrations/shared/date-utils';
-import { OpenAiService } from '../llm/openai.service';
-import { GigaChatService } from '../llm/gigachat.service';
-import { QwenService } from '../llm/qwen.service';
-import { Qwen3Service } from '../llm/qwen3.service';
+import { LlmRouter } from '../llm/llm-router.service';
+import { EMERGENCY_REPLY, isEmergencyMessage, isPromptInjection, isSymptomMessage } from '../core/dialog/guards';
+import { PromptBuilder } from '../core/prompts/prompt-builder.service';
+import { ClinicProfileService } from '../core/profile/clinic-profile.service';
+import { PipelineChatService } from '../core/dialog/pipeline-chat.service';
+import { toMisKind } from '../adapters/mis/mis-registry.service';
 import { CompletionResult, LlmTool } from '../llm/llm.types';
 import { BookingService } from '../booking/booking.service';
 import { TokenUsage } from '../database/entities/token-usage.entity';
@@ -30,29 +30,6 @@ import {
 const MAX_TOOL_ITERATIONS = 6;
 const MAX_MESSAGE_LENGTH = 2000;
 
-// Паттерны классических промпт-инъекций (попытки переключить роль / сбросить инструкции).
-// Проверяются до передачи сообщения в LLM.
-const INJECTION_PATTERNS: RegExp[] = [
-  /ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|commands?|prompts?|rules?)/i,
-  /forget\s+(all\s+)?(previous|prior|above|your)\s+(instructions?|commands?|rules?)/i,
-  /disregard\s+(your|all|previous|prior)\s+(instructions?|rules?|commands?)/i,
-  /override\s+(your|all|previous|prior)\s+(instructions?|rules?|commands?)/i,
-  /you\s+are\s+now\s+(a\s+|an\s+)?(?!going|able|ready)/i,
-  /act\s+as\s+(if\s+you\s+(are|were)\s+|a\s+|an\s+)/i,
-  /pretend\s+(you\s+(are|were)|to\s+be)\s+/i,
-  /new\s+(system\s+)?instructions?\s*:/i,
-  /<\s*system\s*>/i,
-  /\[\s*system\s*\]/i,
-  /#+\s*system\s*prompt/i,
-  /\/\*.*system.*\*\//i,
-  /jailbreak/i,
-  /dan\s+mode/i,
-  /developer\s+mode/i,
-];
-
-function isPromptInjection(text: string): boolean {
-  return INJECTION_PATTERNS.some((re) => re.test(text));
-}
 
 // После вызова любого из этих инструментов пациент уже на стадии бронирования —
 // «обзорные» инструменты POST_DISCOVERY_DROP больше не нужны и не отправляются в LLM.
@@ -150,58 +127,7 @@ function formatRuDateTime(iso: string): string {
 }
 
 // Ключевые слова, указывающие на медицинский симптом / жалобу
-const SYMPTOM_PATTERNS = [
-  /болит|болит|боль|болью|болезненн/i,
-  /тошнит|тошнота|рвот/i,
-  /температура|жар|лихорадк/i,
-  /кашл|насморк|горло|чихает/i,
-  /кружится|головокружени/i,
-  /давление|сердцебиение|одышк/i,
-  /зуд|сыпь|покраснени/i,
-  /плохо себя чувству|нехорошо|недомогани/i,
-  /слабост|усталост|упадок сил/i,
-  /отёк|опухл|припухл/i,
-  /судорог|онемени|покалыван/i,
-];
 
-function isSymptomMessage(text: string): boolean {
-  return SYMPTOM_PATTERNS.some((re) => re.test(text));
-}
-
-/**
- * Экстренные ситуации, при которых ассистент НЕ должен предлагать запись —
- * вместо этого подскажет звонить 103/112. Покрывает: острая боль в груди,
- * потеря сознания, удушье, обширное кровотечение, инсульт-признаки, ребёнок
- * проглотил инородное тело, очень высокая температура у ребёнка, судороги,
- * травма с невозможностью двигаться, отравление, ожог большой площади.
- */
-const EMERGENCY_PATTERNS: RegExp[] = [
-  /(резкая|острая|сильная|невыносим).{0,30}боль.{0,30}(груд|сердц)/iu,
-  /(не могу|трудно|тяжело).{0,30}дыша/iu,
-  /(задыха|удушь|перехватило дыхан)/iu,
-  /(потеря(л|ла)?|теряет).{0,15}сознани/iu,
-  /(без сознан|без созн)/iu,
-  /(инсульт|инфаркт)/iu,
-  /(сильн[а-яё]+\s+кровотечен|обильн[а-яё]+\s+кровотечен|кровотечен[а-яё]+\s+(сильн|обильн|остановить))/iu,
-  /(не могу|невозможно).{0,20}(шевел|двигать|встать).{0,40}(нога|рука|конечн)/iu,
-  /(проглотил|проглотила|глотнул).{0,40}(батаре|монет|игл|таблетк|острое|инородн)/iu,
-  /(температур[а-яё]*\s*(под|до|выше|за)?\s*(39|40|41)|жар.{0,20}(39|40|41))/iu,
-  /(судорог[а-яё]*|конвульси)/iu,
-  /(отравлен|отравил|выпил.{0,20}(хими|кислот|щёлоч|щелоч|таблет))/iu,
-  /(ожог.{0,30}(больш|обширн|сильн|кипяток|пламя))/iu,
-  /(парализ|онемел[а-яё]*\s+(половина|сторона|тело))/iu,
-  /(перелом\s+открыт|открытый\s+перелом|кость.{0,15}торчит)/iu,
-  /(аллерги|анафилак).{0,30}(шок|опух|задыха|отёк)/iu,
-];
-
-function isEmergencyMessage(text: string): boolean {
-  return EMERGENCY_PATTERNS.some((re) => re.test(text));
-}
-
-const EMERGENCY_REPLY =
-  'Это похоже на экстренную ситуацию. Срочно позвоните в скорую помощь: **103** ' +
-  '(с мобильного — **112**). Если возможно, оставайтесь с пострадавшим до приезда ' +
-  'врачей. Запись в клинике в такой ситуации не нужна — медлить нельзя.';
 
 /**
  * Время суток по сообщению пациента. Используется для пост-фильтра allSlots
@@ -283,23 +209,22 @@ const CLINIC_SPECIALISTS =
 export class ChatService implements OnModuleInit {
   private readonly logger = new Logger(ChatService.name);
   private readonly sessions = new Map<string, SessionData>();
-  private readonly systemPrompt: string;
+  private readonly systemPromptOverride: string | undefined;
   private readonly defaultProvider: LlmProvider;
   private readonly SESSION_TTL_MS = 30 * 60 * 1000;
 
   constructor(
     private readonly config: ConfigService,
-    private readonly openAi: OpenAiService,
-    private readonly gigaChat: GigaChatService,
-    private readonly qwen: QwenService,
-    private readonly qwen3: Qwen3Service,
+    private readonly llm: LlmRouter,
+    private readonly prompts: PromptBuilder,
+    private readonly profiles: ClinicProfileService,
+    private readonly pipeline: PipelineChatService,
     private readonly booking: BookingService,
     @InjectRepository(TokenUsage)
     private readonly tokenUsageRepo: Repository<TokenUsage>,
   ) {
-    const promptFile = path.resolve(__dirname, '../prompts/system-prompt.txt');
-    const defaultPrompt = fs.readFileSync(promptFile, 'utf-8').trim();
-    this.systemPrompt = this.config.get<string>('CHAT_SYSTEM_PROMPT', defaultPrompt);
+    // Ядро legacy-промпта: src/clinics/core/prompts/legacy.md; CHAT_SYSTEM_PROMPT заменяет ядро для всех сетей.
+    this.systemPromptOverride = this.config.get<string>('CHAT_SYSTEM_PROMPT') || undefined;
     // По умолчанию из .env: CHAT_DEFAULT_PROVIDER=qwen|gigachat|openai.
     this.defaultProvider = (this.config.get<string>('CHAT_DEFAULT_PROVIDER') as LlmProvider) ?? 'gigachat';
   }
@@ -315,17 +240,7 @@ export class ChatService implements OnModuleInit {
     model: string | undefined,
     forceText: boolean,
   ): Promise<CompletionResult> {
-    switch (provider) {
-      case 'gigachat':
-        return this.gigaChat.complete(context, tools, model, forceText);
-      case 'qwen':
-        return this.qwen.complete(context, tools, model, forceText);
-      case 'qwen3':
-        return this.qwen3.complete(context, tools, model, forceText);
-      case 'openai':
-      default:
-        return this.openAi.complete(context, forceText ? [] : tools, model);
-    }
+    return this.llm.complete({ provider, messages: context, tools, model, forceText });
   }
 
   onModuleInit() {
@@ -345,6 +260,20 @@ export class ChatService implements OnModuleInit {
     if (isPromptInjection(message)) {
       this.logger.warn(`Prompt injection attempt in session ${sessionId}: "${message.slice(0, 100)}"`);
       return { sessionId, reply: 'Я могу помочь только с записью в клинику. Чем могу быть полезен?', history: [] };
+    }
+
+    // Новый движок (профиль сети: engine: pipeline) — модель только разбирает реплику.
+    const override = this.config.get<string>('CHAT_ALLOW_ENGINE_OVERRIDE') === 'true' ? dto.engine : undefined;
+    if (clinicNetId && (override ?? this.profiles.forNet(clinicNetId).engine) === 'pipeline') {
+      let patient: PatientData | undefined;
+      if (encryptedPatient) {
+        try {
+          patient = decryptPatientData(encryptedPatient, this.config.get<string>('PATIENT_DATA_PRIVATE_KEY', ''));
+        } catch (err) {
+          this.logger.warn(`Failed to decrypt patient data for session ${sessionId}: ${String(err)}`);
+        }
+      }
+      return this.pipeline.handle({ ...dto, clinicNetId }, { patient, defaultProvider: this.defaultProvider });
     }
 
     const session = this.getOrCreateSession(sessionId, provider, model);
@@ -533,8 +462,16 @@ export class ChatService implements OnModuleInit {
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     const dayNames = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
     const todayDayName = dayNames[today.getDay()];
+    // Промпт собирается из слоёв: ядро + слой МИС + слой сети (src/clinics).
+    const built = this.prompts.build(
+      'legacy',
+      { clinicNetId: session.clinicNetId, mis: toMisKind(session.misType) },
+      {},
+      { coreOverride: this.systemPromptOverride },
+    );
+    session.promptHash = built.hash;
     let systemWithDate =
-      `${this.systemPrompt}\nСегодня: ${todayStr} (${todayDayName}). ` +
+      `${built.text}\nСегодня: ${todayStr} (${todayDayName}). ` +
       `Для слов "вторник"/"завтра"/"послезавтра" используй dayOfWeek; date — только для явных дат с числом.`;
 
     // Гостевой режим MedFlex: пациент не авторизован, операции с существующими записями недоступны.
@@ -940,12 +877,13 @@ export class ChatService implements OnModuleInit {
     return 'Не удалось обработать запрос. Попробуйте переформулировать.';
   }
 
-  getHistory(sessionId: string): ChatMessage[] {
-    return this.sessions.get(sessionId)?.messages ?? [];
+  async getHistory(sessionId: string): Promise<ChatMessage[]> {
+    return this.sessions.get(sessionId)?.messages ?? (await this.pipeline.history(sessionId)) ?? [];
   }
 
-  clearSession(sessionId: string): void {
+  async clearSession(sessionId: string): Promise<void> {
     this.sessions.delete(sessionId);
+    await this.pipeline.clear(sessionId);
   }
 
   private getOrCreateSession(
@@ -1208,6 +1146,8 @@ export class ChatService implements OnModuleInit {
       promptTokens: usage.promptTokens,
       completionTokens: usage.completionTokens,
       totalTokens: usage.totalTokens,
+      task: 'legacy',
+      promptHash: this.sessions.get(sessionId)?.promptHash ?? null,
     }).catch((err) => this.logger.warn(`Failed to save token usage: ${String(err)}`));
   }
 

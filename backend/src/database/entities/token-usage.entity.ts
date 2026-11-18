@@ -37,6 +37,14 @@ export class TokenUsage {
   @Column({ name: 'total_tokens' })
   totalTokens: number;
 
+  /** Задача модели: legacy, nlu, answer, symptoms, agent, embed. */
+  @Column({ length: 20, nullable: true })
+  task: string | null;
+
+  /** Версия промпта (PromptBuilder.hash). */
+  @Column({ name: 'prompt_hash', length: 12, nullable: true })
+  promptHash: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 }

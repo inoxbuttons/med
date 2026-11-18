@@ -239,6 +239,19 @@ export class MedflexService {
 
   // ── Маршрутизатор tool-вызовов ────────────────────────────────────────────────
 
+  /**
+   * Клиент MedFlex для сети. Нет ключа или ключ начинается с 'mock' → mock-сервер.
+   * null — реальный ключ без lpuGroupId.
+   */
+  clientFor(apiKey?: string | null, lpuGroupId?: number): { client: MedflexClient; lpuGroupId: number } | null {
+    if (!apiKey || apiKey.startsWith('mock')) {
+      const mockUrl = process.env.MEDFLEX_MOCK_URL ?? 'http://localhost:3001';
+      return { client: new MedflexClient('mock', mockUrl), lpuGroupId: lpuGroupId ?? 1 };
+    }
+    if (!lpuGroupId) return null;
+    return { client: new MedflexClient(apiKey), lpuGroupId };
+  }
+
   async executeTool(
     name: string,
     args: Record<string, any>,
@@ -249,21 +262,13 @@ export class MedflexService {
     districtId?: number,
     patient?: PatientData,
   ): Promise<unknown> {
-    // Нет ключа или ключ начинается с 'mock' → mock-режим
-    let client: MedflexClient;
-    if (!apiKey || apiKey.startsWith('mock')) {
-      const mockUrl = process.env.MEDFLEX_MOCK_URL ?? 'http://localhost:3001';
-      this.logger.debug(`MedFlex tool '${name}' → mock server ${mockUrl}`);
-      client = new MedflexClient('mock', mockUrl);
-      if (!lpuGroupId) lpuGroupId = 1;
-      apiKey = 'mock';
-    } else {
-      if (!lpuGroupId) {
-        this.logger.warn(`MedFlex tool '${name}' called without lpuGroupId`);
-        return { error: 'Идентификатор сети клиник не задан.' };
-      }
-      client = new MedflexClient(apiKey);
+    const resolved = this.clientFor(apiKey, lpuGroupId);
+    if (!resolved) {
+      this.logger.warn(`MedFlex tool '${name}' called without lpuGroupId`);
+      return { error: 'Идентификатор сети клиник не задан.' };
     }
+    const client = resolved.client;
+    lpuGroupId = resolved.lpuGroupId;
 
     // В гостевом режиме блокируем операции, требующие идентификатор пациента (телефон).
     // cancel_appointment по uuid допускается — он используется внутри сервиса при разрешении конфликтов.
@@ -460,7 +465,7 @@ export class MedflexService {
    * Ищет активную запись пациента на дату конфликтующего слота через API истории.
    * Используется при обработке 409 от book_appointment.
    */
-  private async findConflictingAppointment(
+  async findConflictingAppointment(
     client: MedflexClient,
     phone: string | undefined,
     startTime: string,
@@ -491,7 +496,7 @@ export class MedflexService {
 
   // ── Кэш специальностей ────────────────────────────────────────────────────────
 
-  private async getCachedSpecialities(client: MedflexClient, apiKey: string): Promise<MfSpeciality[]> {
+  async getCachedSpecialities(client: MedflexClient, apiKey: string): Promise<MfSpeciality[]> {
     const cached = this.specialityCache.get(apiKey);
     if (cached && Date.now() - cached.fetchedAt < SPECIALITY_TTL_MS) {
       return cached.data;
@@ -565,7 +570,7 @@ export class MedflexService {
 
   // ── Кэш клиник ────────────────────────────────────────────────────────────────
 
-  private async getCachedLpus(client: MedflexClient, lpuGroupId: number, townId?: number): Promise<MfLpu[]> {
+  async getCachedLpus(client: MedflexClient, lpuGroupId: number, townId?: number): Promise<MfLpu[]> {
     const cached = this.lpuCache.get(lpuGroupId);
     if (cached && Date.now() - cached.fetchedAt < LPU_TTL_MS) {
       return cached.lpus;

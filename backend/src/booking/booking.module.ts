@@ -5,6 +5,7 @@ import { ClinicNet } from '../database/entities/clinic-net.entity';
 import { LocalDbModule } from '../integrations/local/local-db.module';
 import { InfclinicaModule } from '../integrations/infoclinica/infoclinica.module';
 import { MedflexModule } from '../integrations/medflex/medflex.module';
+import { CatalogModule } from '../core/catalog/catalog.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { MedflexModule } from '../integrations/medflex/medflex.module';
     LocalDbModule,
     InfclinicaModule,
     MedflexModule,
+    CatalogModule,
   ],
   providers: [BookingService],
   exports: [BookingService],

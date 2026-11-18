@@ -4,7 +4,8 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { z } from 'zod';
 import { OpenAiService } from '../llm/openai.service';
 import { GigaChatService } from '../llm/gigachat.service';
-import { LocalDbService } from '../integrations/local/local-db.service';
+import { MisRegistry } from '../adapters/mis/mis-registry.service';
+import { resolveSlot } from '../core/ports';
 
 @Injectable()
 export class McpService implements OnModuleInit {
@@ -14,7 +15,7 @@ export class McpService implements OnModuleInit {
   constructor(
     private readonly openAi: OpenAiService,
     private readonly gigaChat: GigaChatService,
-    private readonly booking: LocalDbService,
+    private readonly mis: MisRegistry,
   ) {
     this.server = new McpServer({ name: 'med-mcp-server', version: '0.1.0' });
   }
@@ -47,83 +48,134 @@ export class McpService implements OnModuleInit {
 
     (this.server.tool as any)(
       'get_clinics',
-      'Get list of all clinic locations',
-      {},
-      async () => {
-        const result = await this.booking.getClinics();
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      'Клиники сети',
+      { clinicNetId: z.number() },
+      async ({ clinicNetId }: { clinicNetId: number }) => {
+        const { catalog } = await this.mis.forNet(clinicNetId);
+        return this.text(await catalog.clinics());
       },
     );
 
     (this.server.tool as any)(
       'find_doctors',
-      'Find doctors by speciality, optionally filtered by clinic',
-      {
-        speciality: z.string(),
-        clinicId: z.number().optional(),
-      },
-      async ({ speciality, clinicId }: { speciality: string; clinicId?: number }) => {
-        const result = await this.booking.findDoctors(speciality, clinicId);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      'Поиск врачей сети по специальности или фамилии',
+      { clinicNetId: z.number(), query: z.string(), clinicId: z.number().optional() },
+      async ({ clinicNetId, query, clinicId }: { clinicNetId: number; query: string; clinicId?: number }) => {
+        const { catalog } = await this.mis.forNet(clinicNetId);
+        return this.text(await catalog.searchDoctors(query, clinicId));
       },
     );
 
     (this.server.tool as any)(
       'find_services',
-      'Find medical services by name',
-      {
-        query: z.string(),
-        clinicId: z.number().optional(),
+      'Поиск услуг сети по названию',
+      { clinicNetId: z.number(), query: z.string(), clinicId: z.number().optional() },
+      async ({ clinicNetId, query, clinicId }: { clinicNetId: number; query: string; clinicId?: number }) => {
+        const { catalog } = await this.mis.forNet(clinicNetId);
+        return this.text(await catalog.searchServices(query, clinicId));
       },
-      async ({ query, clinicId }: { query: string; clinicId?: number }) => {
-        const result = await this.booking.findServices(query, clinicId);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    );
+
+    (this.server.tool as any)(
+      'get_visit_services',
+      'Типы приёма врача (первичный/повторный) с ценами',
+      { clinicNetId: z.number(), doctorId: z.number(), clinicId: z.number().optional() },
+      async ({ clinicNetId, doctorId, clinicId }: { clinicNetId: number; doctorId: number; clinicId?: number }) => {
+        const { booking } = await this.mis.forNet(clinicNetId);
+        return this.text(await booking.visitServices(doctorId, clinicId));
       },
     );
 
     (this.server.tool as any)(
       'get_available_slots',
-      'Get available appointment slots for a doctor or service',
+      'Свободные слоты врача или услуги',
       {
+        clinicNetId: z.number(),
         doctorId: z.number().optional(),
-        serviceId: z.number().optional(),
+        serviceId: z.union([z.number(), z.string()]).optional(),
         clinicId: z.number().optional(),
-        fromDate: z.string().optional(),
-        days: z.number().optional(),
+        mode: z.enum(['nearest', 'day', 'week']).optional()
+          .describe('nearest — ближайший день (по умолчанию), day — конкретный день, week — две недели от date'),
+        date: z.string().optional().describe('YYYY-MM-DD, для mode=day/week'),
       },
-      async (args: {
+      async ({ clinicNetId, ...query }: {
+        clinicNetId: number;
         doctorId?: number;
-        serviceId?: number;
+        serviceId?: number | string;
         clinicId?: number;
-        fromDate?: string;
-        days?: number;
+        mode?: 'nearest' | 'day' | 'week';
+        date?: string;
       }) => {
-        const result = await this.booking.getAvailableSlots(args);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        const { booking } = await this.mis.forNet(clinicNetId);
+        const slots = await booking.findSlots(query);
+        return this.text(slots.map(({ ref: _ref, ...slot }) => slot));
       },
     );
 
     (this.server.tool as any)(
       'book_appointment',
-      'Book an appointment for a patient',
+      'Записать пациента к врачу или на услугу на свободный слот',
       {
+        clinicNetId: z.number(),
         doctorId: z.number().optional(),
-        serviceId: z.number().optional(),
+        serviceId: z.union([z.number(), z.string()]).optional(),
+        visitServiceId: z.union([z.number(), z.string()]).optional(),
         clinicId: z.number(),
-        startTime: z.string(),
-        patientName: z.string().optional(),
+        startTime: z.string().describe('YYYY-MM-DDTHH:MM — начало слота из get_available_slots'),
+        clientId: z.number().optional(),
+        lastName: z.string().optional(),
+        firstName: z.string().optional(),
+        secondName: z.string().optional(),
+        phone: z.string().optional(),
+        birthday: z.string().optional(),
+        comment: z.string().optional(),
       },
-      async (args: {
+      async (a: {
+        clinicNetId: number;
         doctorId?: number;
-        serviceId?: number;
+        serviceId?: number | string;
+        visitServiceId?: number | string;
         clinicId: number;
         startTime: string;
-        patientName?: string;
+        clientId?: number;
+        lastName?: string;
+        firstName?: string;
+        secondName?: string;
+        phone?: string;
+        birthday?: string;
+        comment?: string;
       }) => {
-        const result = await this.booking.bookAppointment(args);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+        const { booking, catalog } = await this.mis.forNet(a.clinicNetId);
+        if (!(await catalog.clinics()).some((c) => c.id === a.clinicId)) {
+          return this.text({ status: 'rejected', reason: 'outside_net', message: `Клиника ${a.clinicId} не входит в сеть ${a.clinicNetId}` });
+        }
+        const slot = await resolveSlot(booking, {
+          doctorId: a.doctorId,
+          serviceId: a.doctorId ? undefined : a.serviceId,
+          clinicId: a.clinicId,
+          start: a.startTime,
+        });
+        if (!slot) return this.text({ status: 'rejected', reason: 'slot_taken', message: 'Слот недоступен' });
+        const hasData = a.lastName || a.firstName || a.phone || a.birthday;
+        return this.text(await booking.book({
+          slot,
+          doctorId: a.doctorId,
+          serviceId: a.doctorId ? undefined : a.serviceId,
+          visitServiceId: a.visitServiceId,
+          comment: a.comment,
+          patient: {
+            clientId: a.clientId,
+            data: hasData
+              ? { lastName: a.lastName ?? '', firstName: a.firstName ?? '', secondName: a.secondName, phone: a.phone ?? '', birthday: a.birthday ?? '' }
+              : undefined,
+          },
+        }));
       },
     );
+  }
+
+  private text(data: unknown) {
+    return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
   }
 
   async connectInMemory() {

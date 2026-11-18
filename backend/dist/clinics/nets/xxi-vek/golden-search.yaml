@@ -1,0 +1,71 @@
+# Золотой набор поиска по каталогу сети «XXI Век».
+# Запуск без модели (только текст + триграммы):
+#   docker exec -w /app med-backend-1 node dist/cli/catalog-eval.js --net=2
+# с векторами (платно, нужен EMBEDDINGS_ENABLED=true и проиндексированные эмбеддинги):
+#   ... --vector
+# expect — регулярные выражения (без учёта регистра); кейс засчитан в top-5, если хоть один
+# из первых пяти результатов подходит; top1 — если подходит первый.
+# tag: formal — как в прайсе; abbr — сокращения; colloquial — разговорно/жаргон;
+#      typo — опечатки; case — падежи; symptom — жалоба → специальность; doctor — фамилия.
+
+cases:
+  # ── Услуги: как в прайсе ───────────────────────────────────────────────
+  - { q: мрт головного мозга, kind: service, tag: formal, expect: ['^МРТ ГОЛОВНОГО МОЗГА'] }
+  - { q: кт головного мозга, kind: service, tag: formal, expect: ['^КТ ГОЛОВНОГО МОЗГА'] }
+  - { q: эхокардиография, kind: service, tag: formal, expect: ['^Эхокардиография$', 'УЗИ сердца'] }
+  - { q: маммография, kind: service, tag: formal, expect: ['^Маммография'] }
+  - { q: видеоколоноскопия, kind: service, tag: formal, expect: ['колоноскоп'] }
+  - { q: дуплексное сканирование вен нижних конечностей, kind: service, tag: formal, expect: ['сканирование вен нижних'] }
+  - { q: консультация флеболога первичная, kind: service, tag: formal, expect: ['флеболога первичная'] }
+  - { q: регистрация электрокардиограммы, kind: service, tag: formal, expect: ['^Регистрация электрокардиограммы'] }
+
+  # ── Сокращения ─────────────────────────────────────────────────────────
+  - { q: узи щитовидной железы, kind: service, tag: abbr, expect: ['Ультразвуковое исследование щитовидной'] }
+  - { q: узи брюшной полости, kind: service, tag: abbr, expect: ['Ультразвуковое исследование брюшной полости'] }
+  - { q: узи молочных желез, kind: service, tag: abbr, expect: ['Ультразвуковое исследование молочных'] }
+  - { q: узи сердца, kind: service, tag: abbr, expect: ['УЗИ сердца', 'исследование сердца', 'Эхокардиография'] }
+  - { q: экг, kind: service, tag: abbr, expect: ['электрокардиограм', 'Электрокардиография'] }
+  - { q: фгдс, kind: service, tag: abbr, expect: ['гастроскоп', 'ФГДС', 'эзофагогастро'] }
+  - { q: мрт мозга, kind: service, tag: abbr, expect: ['^МРТ ГОЛОВНОГО МОЗГА'] }
+  - { q: кт брюшной полости, kind: service, tag: abbr, expect: ['^КТ (ОРГАНОВ )?БРЮШНОЙ ПОЛОСТИ'] }
+  - { q: эвлк, kind: service, tag: abbr, expect: ['ЭВЛК'] }
+  - { q: днк тест, kind: service, tag: abbr, expect: ['Геномикс', 'ДНК', 'генети'] }
+
+  # ── Разговорно ─────────────────────────────────────────────────────────
+  - { q: узи щитовидки, kind: service, tag: colloquial, expect: ['щитовидной'] }
+  - { q: узи вен на ногах, kind: service, tag: colloquial, expect: ['вен нижн'] }
+  - { q: гастроскопия, kind: service, tag: colloquial, expect: ['гастроскоп'] }
+  - { q: кардиограмма, kind: service, tag: colloquial, expect: ['электрокардиограм', 'Электрокардиография'] }
+  - { q: мрт головы, kind: service, tag: colloquial, expect: ['^МРТ ГОЛОВНОГО МОЗГА'] }
+  - { q: проверить щитовидку, kind: service, tag: colloquial, expect: ['щитовидн'] }
+  - { q: лазерное удаление вен, kind: service, tag: colloquial, expect: ['ЭВЛК', 'лазерн'] }
+
+  # ── Опечатки ───────────────────────────────────────────────────────────
+  - { q: маммограия, kind: service, tag: typo, expect: ['^Маммография'] }
+  - { q: колоноскопя, kind: service, tag: typo, expect: ['колоноскоп'] }
+  - { q: эхокардиографя, kind: service, tag: typo, expect: ['Эхокардиография'] }
+
+  # ── Специальности: падежи и синонимы ──────────────────────────────────
+  - { q: к неврологу, kind: speciality, tag: case, expect: ['невролог'] }
+  - { q: гинеколога, kind: speciality, tag: case, expect: ['гинеколог'] }
+  - { q: лор, kind: speciality, tag: abbr, expect: ['ЛОР', 'оториноларинголог', 'отоларинголог'] }
+  - { q: детский лор, kind: speciality, tag: abbr, expect: ['Детский (ЛОР|врач-отоларинголог)'] }
+  - { q: глазной врач, kind: speciality, tag: colloquial, expect: ['офтальмолог'] }
+  - { q: кожник, kind: speciality, tag: colloquial, expect: ['дерматолог', 'дерматовенеролог'] }
+  - { q: зубной, kind: speciality, tag: colloquial, expect: ['стоматолог'] }
+  - { q: детский врач, kind: speciality, tag: colloquial, expect: ['Педиатр'] }
+  - { q: эндокринолога, kind: speciality, tag: case, expect: ['эндокринолог'] }
+
+  # ── Симптомы → специальность (через подсказки профиля это решает движок; здесь — сам поиск) ──
+  - { q: болит спина, kind: speciality, tag: symptom, expect: ['невролог', 'Травматолог', 'Ортопед'] }
+  - { q: болит живот, kind: speciality, tag: symptom, expect: ['Гастроэнтеролог', 'терапевт'] }
+  - { q: болит горло, kind: speciality, tag: symptom, expect: ['ЛОР', 'оториноларинголог', 'отоларинголог', 'терапевт'] }
+
+  # ── Врачи по фамилии (в т. ч. падежи) ─────────────────────────────────
+  - { q: Стариенко, kind: doctor, tag: doctor, expect: ['^Стариенко'] }
+  - { q: к Иващенко, kind: doctor, tag: doctor, expect: ['^Иващенко'] }
+  - { q: Карапетян Инга, kind: doctor, tag: doctor, expect: ['^Карапетян'] }
+  - { q: к Стрельникову, kind: doctor, tag: case, expect: ['^Стрельников'] }
+  - { q: Носовой, kind: doctor, tag: case, expect: ['^Носова'] }
+  - { q: Ахохова, kind: doctor, tag: doctor, expect: ['^Ахохова'] }
+  - { q: Шанко, kind: doctor, tag: typo, expect: ['^Шанько'] }

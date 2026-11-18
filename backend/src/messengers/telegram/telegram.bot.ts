@@ -6,9 +6,15 @@ import { ClinicNetConfigService, ResolvedClinicConfig } from '../../clinic-confi
 
 type TgSessionState = 'active' | 'awaiting_phone';
 
+interface InlineKeyboard {
+  inline_keyboard: Array<Array<{ text: string; callback_data: string }>>;
+}
+
 interface TgSession {
   state: TgSessionState;
   clientId?: number;
+  /** Подписи кнопок последнего ответа: callback_data → label (для истории диалога). */
+  buttons?: Record<string, string>;
 }
 
 /** Один экземпляр Telegraf-бота для одной клинической сети */
@@ -72,6 +78,17 @@ class TelegramBotInstance {
       }
     });
 
+    // Нажатие инлайн-кнопки (движок pipeline присылает quickReplies с payload).
+    this.bot.on('callback_query', async (ctx) => {
+      const data = 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
+      await ctx.answerCbQuery().catch(() => undefined);
+      if (!data || !ctx.chat) return;
+      const chatId = String(ctx.chat.id);
+      const session = this.getSession(chatId);
+      const label = session.buttons?.[data] ?? data;
+      await this.handleChat(ctx, chatId, label, session.clientId, data.startsWith('t:') ? undefined : data);
+    });
+
     this.bot.catch((err, ctx) => {
       this.logger.error(`[${this.cfg.clinicNetName}] Telegram error ${ctx.chat?.id}: ${err}`);
     });
@@ -90,7 +107,7 @@ class TelegramBotInstance {
     }
   }
 
-  private async handleChat(ctx: Context, chatId: string, text: string, clientId?: number) {
+  private async handleChat(ctx: Context, chatId: string, text: string, clientId?: number, payload?: string) {
     try {
       await ctx.sendChatAction('typing');
       const response = await this.chatService.sendMessage({
@@ -100,9 +117,12 @@ class TelegramBotInstance {
         clientId,
         clinicNetId: this.cfg.clinicNetId,
         misType: this.cfg.misType,
+        payload,
       });
-      for (const chunk of splitMessage(response.reply)) {
-        await this.safeReply(ctx, chunk);
+      const chunks = splitMessage(response.reply);
+      const keyboard = this.keyboard(chatId, response.quickReplies);
+      for (let i = 0; i < chunks.length; i++) {
+        await this.safeReply(ctx, chunks[i], i === chunks.length - 1 ? keyboard : undefined);
       }
     } catch (err) {
       this.logger.error(`[${this.cfg.clinicNetName}] chat error ${chatId}: ${err}`);
@@ -110,12 +130,26 @@ class TelegramBotInstance {
     }
   }
 
-  private async safeReply(ctx: Context, text: string): Promise<void> {
+  private async safeReply(ctx: Context, text: string, keyboard?: InlineKeyboard): Promise<void> {
+    const extra = keyboard ? { reply_markup: keyboard } : {};
     try {
-      await ctx.reply(text, { parse_mode: 'Markdown' });
+      await ctx.reply(text, { parse_mode: 'Markdown', ...extra });
     } catch {
-      await ctx.reply(text);
+      await ctx.reply(text, extra);
     }
+  }
+
+  /** quickReplies → инлайн-клавиатура. callback_data ≤ 64 байт: payload или t:<номер>. */
+  private keyboard(chatId: string, quickReplies?: Array<{ label: string; payload?: string }>): InlineKeyboard | undefined {
+    const session = this.getSession(chatId);
+    session.buttons = {};
+    if (!quickReplies?.length) return undefined;
+    const rows = quickReplies.slice(0, 8).map((q, i) => {
+      const data = q.payload && Buffer.byteLength(q.payload) <= 64 ? q.payload : `t:${i}`;
+      session.buttons![data] = q.label;
+      return [{ text: q.label.slice(0, 60), callback_data: data }];
+    });
+    return { inline_keyboard: rows };
   }
 
   private getSession(chatId: string): TgSession {

@@ -1,3 +1,4 @@
+import type { ChatMessage } from '../chat/chat.types';
 export interface LlmTool {
     name: string;
     description: string;
@@ -29,3 +30,16 @@ export interface CompletionText {
     usage?: LlmUsage;
 }
 export type CompletionResult = CompletionToolCall | CompletionText;
+export interface JsonCompletionRequest {
+    messages: ChatMessage[];
+    schema: Record<string, unknown>;
+    schemaName: string;
+    description?: string;
+    model?: string;
+}
+export interface JsonCompletionResult {
+    data: unknown;
+    raw: string;
+    usage?: LlmUsage;
+}
+export declare function parseJsonObject(text: string): unknown;

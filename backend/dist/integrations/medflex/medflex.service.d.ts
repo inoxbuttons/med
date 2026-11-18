@@ -1,5 +1,6 @@
 import { LlmTool } from '../../llm/llm.types';
 import { MedflexClient } from './medflex.client';
+import { MfSpeciality, MfLpu } from './medflex.types';
 import { ClinicInfo, DoctorInfo, SlotGroup, BookingResult, PatientAppointmentItem, SlotMode } from '../../booking/booking.service';
 import { PatientData } from '../../chat/chat.types';
 export declare class MedflexService {
@@ -7,11 +8,18 @@ export declare class MedflexService {
     private specialityCache;
     private lpuCache;
     getTools(hasPatient?: boolean): LlmTool[];
+    clientFor(apiKey?: string | null, lpuGroupId?: number): {
+        client: MedflexClient;
+        lpuGroupId: number;
+    } | null;
     executeTool(name: string, args: Record<string, any>, clientId?: number, apiKey?: string | null, lpuGroupId?: number, townId?: number, districtId?: number, patient?: PatientData): Promise<unknown>;
-    private findConflictingAppointment;
-    private getCachedSpecialities;
+    findConflictingAppointment(client: MedflexClient, phone: string | undefined, startTime: string): Promise<{
+        uuid: string;
+        description: string;
+    } | null>;
+    getCachedSpecialities(client: MedflexClient, apiKey: string): Promise<MfSpeciality[]>;
     private resolveSpecialities;
-    private getCachedLpus;
+    getCachedLpus(client: MedflexClient, lpuGroupId: number, townId?: number): Promise<MfLpu[]>;
     getClinics(client: MedflexClient, lpuGroupId: number, townId?: number): Promise<ClinicInfo[]>;
     findDoctors(client: MedflexClient, speciality: string, lpuGroupId: number, clinicId?: number, townId?: number): Promise<Array<DoctorInfo & {
         specialityId: number | null;

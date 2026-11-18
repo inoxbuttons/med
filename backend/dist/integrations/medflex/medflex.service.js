@@ -185,23 +185,23 @@ let MedflexService = MedflexService_1 = class MedflexService {
         }
         return tools;
     }
-    async executeTool(name, args, clientId, apiKey, lpuGroupId, townId, districtId, patient) {
-        let client;
+    clientFor(apiKey, lpuGroupId) {
         if (!apiKey || apiKey.startsWith('mock')) {
             const mockUrl = process.env.MEDFLEX_MOCK_URL ?? 'http://localhost:3001';
-            this.logger.debug(`MedFlex tool '${name}' → mock server ${mockUrl}`);
-            client = new medflex_client_1.MedflexClient('mock', mockUrl);
-            if (!lpuGroupId)
-                lpuGroupId = 1;
-            apiKey = 'mock';
+            return { client: new medflex_client_1.MedflexClient('mock', mockUrl), lpuGroupId: lpuGroupId ?? 1 };
         }
-        else {
-            if (!lpuGroupId) {
-                this.logger.warn(`MedFlex tool '${name}' called without lpuGroupId`);
-                return { error: 'Идентификатор сети клиник не задан.' };
-            }
-            client = new medflex_client_1.MedflexClient(apiKey);
+        if (!lpuGroupId)
+            return null;
+        return { client: new medflex_client_1.MedflexClient(apiKey), lpuGroupId };
+    }
+    async executeTool(name, args, clientId, apiKey, lpuGroupId, townId, districtId, patient) {
+        const resolved = this.clientFor(apiKey, lpuGroupId);
+        if (!resolved) {
+            this.logger.warn(`MedFlex tool '${name}' called without lpuGroupId`);
+            return { error: 'Идентификатор сети клиник не задан.' };
         }
+        const client = resolved.client;
+        lpuGroupId = resolved.lpuGroupId;
         if (!patient && (name === 'get_patient_appointments' || name === 'find_patient_appointment')) {
             return { error: 'Для работы с существующими записями нужно войти в личный кабинет на сайте клиники.' };
         }

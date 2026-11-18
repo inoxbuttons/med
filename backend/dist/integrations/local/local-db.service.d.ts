@@ -11,6 +11,7 @@ import { Appointment } from '../../database/entities/appointment.entity';
 import { ServiceWorkingHours } from '../../database/entities/service-working-hours.entity';
 import { ServiceException } from '../../database/entities/service-exception.entity';
 import { ServiceAppointment } from '../../database/entities/service-appointment.entity';
+import { OperatorRequest } from '../../database/entities/operator-request.entity';
 import { LlmTool } from '../../llm/llm.types';
 export type SlotMode = 'nearest' | 'day' | 'week';
 export interface ClinicInfo {
@@ -33,11 +34,23 @@ export interface ServiceInfo {
     id: number;
     name: string;
     direction: string | null;
+    selfBooking: boolean;
+    atDoctorVisit: boolean;
+    stationary: boolean;
+    priceFrom: boolean;
     clinics: {
         id: number;
         name: string;
         price: number | null;
     }[];
+}
+export interface ConsultationServiceInfo {
+    id: number;
+    name: string;
+    price: number | null;
+    priceFrom: boolean;
+    clinicId: number;
+    clinicName: string;
 }
 export interface SlotGroup {
     date: string;
@@ -81,11 +94,12 @@ export declare class LocalDbService {
     private readonly serviceWorkingHoursRepo;
     private readonly serviceExceptionRepo;
     private readonly serviceAppointmentRepo;
+    private readonly operatorRequestRepo;
     private readonly logger;
-    constructor(clinicRepo: Repository<Clinic>, doctorRepo: Repository<Doctor>, doctorLocationRepo: Repository<DoctorLocation>, workingHoursRepo: Repository<DoctorWorkingHours>, exceptionRepo: Repository<DoctorException>, serviceRepo: Repository<Service>, serviceByClinicRepo: Repository<ServiceByClinic>, serviceScheduleRepo: Repository<ServiceSchedule>, appointmentRepo: Repository<Appointment>, serviceWorkingHoursRepo: Repository<ServiceWorkingHours>, serviceExceptionRepo: Repository<ServiceException>, serviceAppointmentRepo: Repository<ServiceAppointment>);
-    getClinics(): Promise<ClinicInfo[]>;
-    findDoctors(speciality: string, clinicId?: number): Promise<DoctorInfo[]>;
-    findServices(query: string, clinicId?: number): Promise<ServiceInfo[]>;
+    constructor(clinicRepo: Repository<Clinic>, doctorRepo: Repository<Doctor>, doctorLocationRepo: Repository<DoctorLocation>, workingHoursRepo: Repository<DoctorWorkingHours>, exceptionRepo: Repository<DoctorException>, serviceRepo: Repository<Service>, serviceByClinicRepo: Repository<ServiceByClinic>, serviceScheduleRepo: Repository<ServiceSchedule>, appointmentRepo: Repository<Appointment>, serviceWorkingHoursRepo: Repository<ServiceWorkingHours>, serviceExceptionRepo: Repository<ServiceException>, serviceAppointmentRepo: Repository<ServiceAppointment>, operatorRequestRepo: Repository<OperatorRequest>);
+    getClinics(clinicNetId?: number): Promise<ClinicInfo[]>;
+    findDoctors(speciality: string, clinicId?: number, clinicNetId?: number): Promise<DoctorInfo[]>;
+    findServices(query: string, clinicId?: number, clinicNetId?: number): Promise<ServiceInfo[]>;
     getAvailableSlots(params: {
         doctorId?: number;
         serviceId?: number;
@@ -105,7 +119,7 @@ export declare class LocalDbService {
         comment?: string;
     }): Promise<BookingResult>;
     private bookServiceAppointment;
-    resolveClinicIdByName(clinicId?: number, clinicName?: string): Promise<number | undefined>;
+    resolveClinicIdByName(clinicId?: number, clinicName?: string, clinicNetId?: number): Promise<number | undefined>;
     findDoctorsAndSlots(params: {
         speciality: string;
         clinicId?: number;
@@ -113,6 +127,7 @@ export declare class LocalDbService {
         date?: string;
         time?: string;
         mode?: SlotMode;
+        clinicNetId?: number;
     }): Promise<Array<{
         doctorId: number;
         doctorName: string;
@@ -136,6 +151,7 @@ export declare class LocalDbService {
         date: string;
         time: string;
         clinicId?: number;
+        clinicNetId?: number;
     }): Promise<{
         available: (SlotGroup & {
             doctorId: number;
@@ -171,6 +187,21 @@ export declare class LocalDbService {
         patientId?: number;
         comment?: string;
     }): Promise<BookingResult>;
+    findDoctorConsultationServices(doctorId: number, clinicId?: number, clinicNetId?: number): Promise<ConsultationServiceInfo[]>;
+    createOperatorRequest(params: {
+        clinicId?: number;
+        serviceId?: number;
+        doctorId?: number;
+        patientId?: number;
+        patientName?: string;
+        patientPhone?: string;
+        patientBirthday?: string;
+        notes?: string;
+        sessionId?: string;
+    }): Promise<{
+        id: number;
+        message: string;
+    }>;
     getTools(): LlmTool[];
-    executeTool(name: string, args: Record<string, any>, clientId?: number): Promise<unknown>;
+    executeTool(name: string, args: Record<string, any>, clientId?: number, sessionId?: string, clinicNetId?: number): Promise<unknown>;
 }

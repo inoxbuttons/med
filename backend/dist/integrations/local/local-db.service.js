@@ -29,10 +29,11 @@ const appointment_entity_1 = require("../../database/entities/appointment.entity
 const service_working_hours_entity_1 = require("../../database/entities/service-working-hours.entity");
 const service_exception_entity_1 = require("../../database/entities/service-exception.entity");
 const service_appointment_entity_1 = require("../../database/entities/service-appointment.entity");
+const operator_request_entity_1 = require("../../database/entities/operator-request.entity");
 const booking_constants_1 = require("../../booking/booking.constants");
 const date_utils_1 = require("../shared/date-utils");
 let LocalDbService = LocalDbService_1 = class LocalDbService {
-    constructor(clinicRepo, doctorRepo, doctorLocationRepo, workingHoursRepo, exceptionRepo, serviceRepo, serviceByClinicRepo, serviceScheduleRepo, appointmentRepo, serviceWorkingHoursRepo, serviceExceptionRepo, serviceAppointmentRepo) {
+    constructor(clinicRepo, doctorRepo, doctorLocationRepo, workingHoursRepo, exceptionRepo, serviceRepo, serviceByClinicRepo, serviceScheduleRepo, appointmentRepo, serviceWorkingHoursRepo, serviceExceptionRepo, serviceAppointmentRepo, operatorRequestRepo) {
         this.clinicRepo = clinicRepo;
         this.doctorRepo = doctorRepo;
         this.doctorLocationRepo = doctorLocationRepo;
@@ -45,10 +46,14 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
         this.serviceWorkingHoursRepo = serviceWorkingHoursRepo;
         this.serviceExceptionRepo = serviceExceptionRepo;
         this.serviceAppointmentRepo = serviceAppointmentRepo;
+        this.operatorRequestRepo = operatorRequestRepo;
         this.logger = new common_1.Logger(LocalDbService_1.name);
     }
-    async getClinics() {
-        const clinics = await this.clinicRepo.find({ order: { name: 'ASC' } });
+    async getClinics(clinicNetId) {
+        const clinics = await this.clinicRepo.find({
+            where: clinicNetId ? { clinicNetId } : {},
+            order: { name: 'ASC' },
+        });
         return clinics.map((c) => ({
             id: c.id,
             name: c.name,
@@ -56,24 +61,31 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
             phone: c.phone,
         }));
     }
-    async findDoctors(speciality, clinicId) {
+    async findDoctors(speciality, clinicId, clinicNetId) {
         const qb = this.doctorRepo
             .createQueryBuilder('d')
             .innerJoinAndSelect('d.speciality', 's')
             .innerJoin('doctor_locations', 'dl', 'dl.doctor_id = d.id')
+            .innerJoin('clinics', 'dc', 'dc.id = dl.clinic_id')
             .where('(s.name ILIKE :q OR d.name ILIKE :q)', { q: `%${speciality}%` });
         if (clinicId) {
             qb.andWhere('dl.clinic_id = :clinicId', { clinicId });
+        }
+        if (clinicNetId) {
+            qb.andWhere('dc.clinic_net_id = :clinicNetId', { clinicNetId });
         }
         const doctors = await qb.getMany();
         if (doctors.length === 0)
             return [];
         const doctorIds = doctors.map((d) => d.id);
-        const locations = await this.doctorLocationRepo
+        const locQb = this.doctorLocationRepo
             .createQueryBuilder('dl')
             .innerJoinAndSelect('dl.clinic', 'c')
-            .where('dl.doctor_id IN (:...ids)', { ids: doctorIds })
-            .getMany();
+            .where('dl.doctor_id IN (:...ids)', { ids: doctorIds });
+        if (clinicNetId) {
+            locQb.andWhere('c.clinic_net_id = :clinicNetId', { clinicNetId });
+        }
+        const locations = await locQb.getMany();
         const locationsByDoctor = new Map();
         for (const loc of locations) {
             const arr = locationsByDoctor.get(loc.doctorId) ?? [];
@@ -92,25 +104,48 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
             };
         });
     }
-    async findServices(query, clinicId) {
+    async findServices(query, clinicId, clinicNetId) {
         const qb = this.serviceRepo
             .createQueryBuilder('s')
             .leftJoinAndSelect('s.medField', 'mf')
             .innerJoin('services_by_clinics', 'sbc', 'sbc.service_id = s.id')
-            .where('s.name ILIKE :q', { q: `%${query}%` });
+            .innerJoin('clinics', 'sc', 'sc.id = sbc.clinic_id');
+        const words = (query ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 2).map(wordStem);
+        if (words.length === 0) {
+            qb.where('s.name ILIKE :q', { q: `%${query ?? ''}%` });
+        }
+        else {
+            words.forEach((w, i) => {
+                const variants = [w, ...(SERVICE_ABBREVIATIONS[w] ?? [])];
+                const params = {};
+                const cond = variants
+                    .map((v, j) => {
+                    params[`w${i}_${j}`] = `%${v}%`;
+                    return `(s.name || ' ' || COALESCE(mf.name, '')) ILIKE :w${i}_${j}`;
+                })
+                    .join(' OR ');
+                qb.andWhere(`(${cond})`, params);
+            });
+        }
         if (clinicId) {
             qb.andWhere('sbc.clinic_id = :clinicId', { clinicId });
         }
-        qb.limit(30);
+        if (clinicNetId) {
+            qb.andWhere('sc.clinic_net_id = :clinicNetId', { clinicNetId });
+        }
+        qb.take(30);
         const services = await qb.getMany();
         if (services.length === 0)
             return [];
         const serviceIds = services.map((s) => s.id);
-        const sbcs = await this.serviceByClinicRepo
+        const sbcQb = this.serviceByClinicRepo
             .createQueryBuilder('sbc')
             .innerJoinAndSelect('sbc.clinic', 'c')
-            .where('sbc.service_id IN (:...ids)', { ids: serviceIds })
-            .getMany();
+            .where('sbc.service_id IN (:...ids)', { ids: serviceIds });
+        if (clinicNetId) {
+            sbcQb.andWhere('c.clinic_net_id = :clinicNetId', { clinicNetId });
+        }
+        const sbcs = await sbcQb.getMany();
         const sbcByService = new Map();
         for (const sbc of sbcs) {
             const arr = sbcByService.get(sbc.serviceId) ?? [];
@@ -121,6 +156,10 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
             id: s.id,
             name: s.name,
             direction: s.medField?.name ?? null,
+            selfBooking: s.selfBooking,
+            atDoctorVisit: s.atDoctorVisit,
+            stationary: s.stationary,
+            priceFrom: s.priceFrom,
             clinics: (sbcByService.get(s.id) ?? []).map((sbc) => ({
                 id: sbc.clinicId,
                 name: sbc.clinic.name,
@@ -393,19 +432,19 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
             message: `Запись подтверждена! ${serviceExists.name}, ${formatRuDateTime(start)}, ${clinicName}.`,
         };
     }
-    async resolveClinicIdByName(clinicId, clinicName) {
+    async resolveClinicIdByName(clinicId, clinicName, clinicNetId) {
         if (clinicId)
             return clinicId;
         if (!clinicName)
             return undefined;
         const clinic = await this.clinicRepo.findOne({
-            where: { name: (0, typeorm_2.ILike)(`%${clinicName}%`) },
+            where: { name: (0, typeorm_2.ILike)(`%${clinicName}%`), ...(clinicNetId ? { clinicNetId } : {}) },
         });
         return clinic ? clinic.id : undefined;
     }
     async findDoctorsAndSlots(params) {
-        const resolvedClinicId = await this.resolveClinicIdByName(params.clinicId, params.clinicName);
-        const doctors = await this.findDoctors(params.speciality, resolvedClinicId);
+        const resolvedClinicId = await this.resolveClinicIdByName(params.clinicId, params.clinicName, params.clinicNetId);
+        const doctors = await this.findDoctors(params.speciality, resolvedClinicId, params.clinicNetId);
         if (doctors.length === 0)
             return [];
         const normalizedDate = params.date
@@ -469,7 +508,7 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
         return results;
     }
     async findAvailableAtTime(params) {
-        const doctors = await this.findDoctors(params.speciality, params.clinicId);
+        const doctors = await this.findDoctors(params.speciality, params.clinicId, params.clinicNetId);
         if (doctors.length === 0)
             return { available: [], nearest: [] };
         const resolvedDate = resolveRelativeDate(params.date)
@@ -690,6 +729,67 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
         await this.cancelAppointment(oldId, type);
         return bookResult;
     }
+    async findDoctorConsultationServices(doctorId, clinicId, clinicNetId) {
+        const doctor = await this.doctorRepo
+            .createQueryBuilder('d')
+            .leftJoin('d.speciality', 'sp')
+            .leftJoin('sp.medField', 'mf')
+            .select(['d.id', 'd.name', 'sp.name', 'sp.medFieldId', 'mf.name'])
+            .where('d.id = :doctorId', { doctorId })
+            .getOne();
+        if (!doctor)
+            return [];
+        const medFieldId = doctor.speciality?.medFieldId ?? null;
+        const lastName = doctor.name.split(' ')[0];
+        const qb = this.serviceRepo
+            .createQueryBuilder('s')
+            .innerJoin('services_by_clinics', 'sbc', 'sbc.service_id = s.id')
+            .innerJoin('clinics', 'c', 'c.id = sbc.clinic_id')
+            .where('s.at_doctor_visit = true')
+            .andWhere(medFieldId
+            ? '(s.med_field_id = :medFieldId OR s.name ILIKE :lastName)'
+            : 's.name ILIKE :lastName', { medFieldId, lastName: `%${lastName}%` });
+        if (clinicId) {
+            qb.andWhere('sbc.clinic_id = :clinicId', { clinicId });
+        }
+        if (clinicNetId) {
+            qb.andWhere('c.clinic_net_id = :clinicNetId', { clinicNetId });
+        }
+        qb.select([
+            's.id',
+            's.name',
+            's.price_from',
+            'sbc.price',
+            'sbc.clinic_id',
+            'c.name',
+        ]).limit(20);
+        const rows = await qb.getRawMany();
+        return rows.map((r) => ({
+            id: r.s_id,
+            name: r.s_name,
+            price: Number(r.sbc_price) || null,
+            priceFrom: r.s_price_from === true || r.s_price_from === 't',
+            clinicId: r.sbc_clinic_id,
+            clinicName: r.c_name,
+        }));
+    }
+    async createOperatorRequest(params) {
+        const req = this.operatorRequestRepo.create({
+            clinicId: params.clinicId ?? null,
+            serviceId: params.serviceId ?? null,
+            doctorId: params.doctorId ?? null,
+            patientId: params.patientId ?? null,
+            patientName: params.patientName ?? null,
+            patientPhone: params.patientPhone ?? null,
+            patientBirthday: params.patientBirthday ?? null,
+            notes: params.notes ?? null,
+            sessionId: params.sessionId ?? null,
+            requestType: 'service_booking',
+            status: 'new',
+        });
+        const saved = await this.operatorRequestRepo.save(req);
+        return { id: saved.id, message: 'Заявка принята. Администратор свяжется с вами в ближайшее время.' };
+    }
     getTools() {
         return [
             {
@@ -889,16 +989,53 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
                     required: ['clinicId', 'startTime'],
                 },
             },
+            {
+                name: 'get_doctor_consultation_services',
+                description: 'Возвращает список услуг приёма и консультаций для конкретного врача в клинике. ' +
+                    'Вызывай когда: (1) пациент спрашивает цену приёма у врача; ' +
+                    '(2) после выбора слота к врачу — чтобы уточнить тип приёма (первичный/повторный) и показать цену в сводке. ' +
+                    'Результат содержит id, name, price, priceFrom, clinicId, clinicName. ' +
+                    'Если результат пустой — цена для данного врача не определена.',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        doctorId: { type: 'number', description: 'ID врача из find_doctors или find_doctors_and_slots' },
+                        clinicId: { type: 'number', description: 'ID клиники (необязательно)' },
+                    },
+                    required: ['doctorId'],
+                },
+            },
+            {
+                name: 'create_operator_request',
+                description: 'Создаёт заявку для оператора (администратора клиники) для обратной связи. ' +
+                    'Используй когда услуга требует направления врача (self_booking: false), направление есть, ' +
+                    'но процедура НЕ выполняется на приёме (at_doctor_visit: false). ' +
+                    'Для авторизованного пациента — вызывай сразу (данные есть в системе). ' +
+                    'Для гостя — сначала спроси ФИО, телефон, дату рождения, затем вызывай с этими данными. ' +
+                    'После вызова скажи пациенту: «Ваша заявка принята. Администратор свяжется с вами в ближайшее время.»',
+                parameters: {
+                    type: 'object',
+                    properties: {
+                        clinicId: { type: 'number', description: 'ID клиники' },
+                        serviceId: { type: 'number', description: 'ID услуги из find_services' },
+                        patientName: { type: 'string', description: 'ФИО пациента (для гостей)' },
+                        patientPhone: { type: 'string', description: 'Телефон пациента (для гостей)' },
+                        patientBirthday: { type: 'string', description: 'Дата рождения пациента YYYY-MM-DD (для гостей)' },
+                        notes: { type: 'string', description: 'Дополнительная информация (например, есть ли направление)' },
+                    },
+                    required: [],
+                },
+            },
         ];
     }
-    async executeTool(name, args, clientId) {
+    async executeTool(name, args, clientId, sessionId, clinicNetId) {
         switch (name) {
             case 'get_clinics':
-                return this.getClinics();
+                return this.getClinics(clinicNetId);
             case 'find_doctors':
-                return this.findDoctors(args.speciality, args.clinicId);
+                return this.findDoctors(args.speciality, args.clinicId, clinicNetId);
             case 'find_services':
-                return this.findServices(args.query, args.clinicId);
+                return this.findServices(args.query, args.clinicId, clinicNetId);
             case 'get_available_slots': {
                 const slotArgs = { ...args };
                 let resolvedTarget = slotArgs.targetDate;
@@ -926,6 +1063,7 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
                     date: args.date,
                     time: args.time,
                     clinicId: args.clinicId,
+                    clinicNetId,
                 });
             case 'find_doctors_and_slots': {
                 const dsArgs = { ...args };
@@ -944,6 +1082,7 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
                     date: dsArgs.date,
                     time: validTime,
                     mode: effectiveMode,
+                    clinicNetId,
                 });
             }
             case 'get_patient_appointments': {
@@ -989,6 +1128,19 @@ let LocalDbService = LocalDbService_1 = class LocalDbService {
                 }
                 return this.bookAppointment(bookArgs);
             }
+            case 'get_doctor_consultation_services':
+                return this.findDoctorConsultationServices(args.doctorId, args.clinicId, clinicNetId);
+            case 'create_operator_request':
+                return this.createOperatorRequest({
+                    clinicId: args.clinicId,
+                    serviceId: args.serviceId,
+                    patientId: clientId,
+                    patientName: args.patientName,
+                    patientPhone: args.patientPhone,
+                    patientBirthday: args.patientBirthday,
+                    notes: args.notes,
+                    sessionId,
+                });
             default:
                 return { error: `Unknown tool: ${name}` };
         }
@@ -1009,7 +1161,9 @@ exports.LocalDbService = LocalDbService = LocalDbService_1 = __decorate([
     __param(9, (0, typeorm_1.InjectRepository)(service_working_hours_entity_1.ServiceWorkingHours)),
     __param(10, (0, typeorm_1.InjectRepository)(service_exception_entity_1.ServiceException)),
     __param(11, (0, typeorm_1.InjectRepository)(service_appointment_entity_1.ServiceAppointment)),
+    __param(12, (0, typeorm_1.InjectRepository)(operator_request_entity_1.OperatorRequest)),
     __metadata("design:paramtypes", [typeorm_2.Repository,
+        typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository,
         typeorm_2.Repository,
@@ -1127,6 +1281,14 @@ function resolveRelativeDate(expr) {
         }
     }
     return null;
+}
+const SERVICE_ABBREVIATIONS = {
+    узи: ['ультразвук'],
+    мрт: ['магнитно-резонанс'],
+    кт: ['компьютерн'],
+};
+function wordStem(word) {
+    return word.length >= 6 ? word.slice(0, Math.max(5, word.length - 3)) : word;
 }
 function buildDateRange(mode, targetDate) {
     let from;

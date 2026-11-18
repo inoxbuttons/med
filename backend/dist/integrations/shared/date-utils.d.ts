@@ -1,6 +1,6 @@
 export declare const DAY_NAMES: string[];
 export declare function dayName(dateStr: string): string;
-export declare function nextWeekdayDate(canonical: string, weekOffset?: number): string | null;
+export declare function nextWeekdayDate(canonical: string, weekOffset?: number, now?: Date): string | null;
 export declare function formatRuDateLabel(dateStr: string): string;
 export declare function normalizeDayWord(s: string | undefined | null): string | null;
 export declare const DAY_WORD_REGEX: RegExp;

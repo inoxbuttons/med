@@ -14,8 +14,6 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 var ChatService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ChatService = void 0;
-const fs = require("fs");
-const path = require("path");
 const crypto = require("crypto");
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
@@ -23,34 +21,16 @@ const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const patient_data_utils_1 = require("../integrations/shared/patient-data-utils");
 const date_utils_1 = require("../integrations/shared/date-utils");
-const openai_service_1 = require("../llm/openai.service");
-const gigachat_service_1 = require("../llm/gigachat.service");
-const qwen_service_1 = require("../llm/qwen.service");
-const qwen3_service_1 = require("../llm/qwen3.service");
+const llm_router_service_1 = require("../llm/llm-router.service");
+const guards_1 = require("../core/dialog/guards");
+const prompt_builder_service_1 = require("../core/prompts/prompt-builder.service");
+const clinic_profile_service_1 = require("../core/profile/clinic-profile.service");
+const pipeline_chat_service_1 = require("../core/dialog/pipeline-chat.service");
+const mis_registry_service_1 = require("../adapters/mis/mis-registry.service");
 const booking_service_1 = require("../booking/booking.service");
 const token_usage_entity_1 = require("../database/entities/token-usage.entity");
 const MAX_TOOL_ITERATIONS = 6;
 const MAX_MESSAGE_LENGTH = 2000;
-const INJECTION_PATTERNS = [
-    /ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|commands?|prompts?|rules?)/i,
-    /forget\s+(all\s+)?(previous|prior|above|your)\s+(instructions?|commands?|rules?)/i,
-    /disregard\s+(your|all|previous|prior)\s+(instructions?|rules?|commands?)/i,
-    /override\s+(your|all|previous|prior)\s+(instructions?|rules?|commands?)/i,
-    /you\s+are\s+now\s+(a\s+|an\s+)?(?!going|able|ready)/i,
-    /act\s+as\s+(if\s+you\s+(are|were)\s+|a\s+|an\s+)/i,
-    /pretend\s+(you\s+(are|were)|to\s+be)\s+/i,
-    /new\s+(system\s+)?instructions?\s*:/i,
-    /<\s*system\s*>/i,
-    /\[\s*system\s*\]/i,
-    /#+\s*system\s*prompt/i,
-    /\/\*.*system.*\*\//i,
-    /jailbreak/i,
-    /dan\s+mode/i,
-    /developer\s+mode/i,
-];
-function isPromptInjection(text) {
-    return INJECTION_PATTERNS.some((re) => re.test(text));
-}
 const DISCOVERY_TOOLS = new Set(['find_doctors_and_slots', 'find_available_at_time', 'find_services']);
 const POST_DISCOVERY_DROP = new Set(['get_clinics', 'find_services']);
 const COMPACTABLE_SEARCH_TOOLS = new Set([
@@ -121,46 +101,6 @@ function formatRuDateTime(iso) {
         return iso;
     return `${m[3]}.${m[2]}.${m[1]} ${m[4]}:${m[5]}`;
 }
-const SYMPTOM_PATTERNS = [
-    /болит|болит|боль|болью|болезненн/i,
-    /тошнит|тошнота|рвот/i,
-    /температура|жар|лихорадк/i,
-    /кашл|насморк|горло|чихает/i,
-    /кружится|головокружени/i,
-    /давление|сердцебиение|одышк/i,
-    /зуд|сыпь|покраснени/i,
-    /плохо себя чувству|нехорошо|недомогани/i,
-    /слабост|усталост|упадок сил/i,
-    /отёк|опухл|припухл/i,
-    /судорог|онемени|покалыван/i,
-];
-function isSymptomMessage(text) {
-    return SYMPTOM_PATTERNS.some((re) => re.test(text));
-}
-const EMERGENCY_PATTERNS = [
-    /(резкая|острая|сильная|невыносим).{0,30}боль.{0,30}(груд|сердц)/iu,
-    /(не могу|трудно|тяжело).{0,30}дыша/iu,
-    /(задыха|удушь|перехватило дыхан)/iu,
-    /(потеря(л|ла)?|теряет).{0,15}сознани/iu,
-    /(без сознан|без созн)/iu,
-    /(инсульт|инфаркт)/iu,
-    /(сильн[а-яё]+\s+кровотечен|обильн[а-яё]+\s+кровотечен|кровотечен[а-яё]+\s+(сильн|обильн|остановить))/iu,
-    /(не могу|невозможно).{0,20}(шевел|двигать|встать).{0,40}(нога|рука|конечн)/iu,
-    /(проглотил|проглотила|глотнул).{0,40}(батаре|монет|игл|таблетк|острое|инородн)/iu,
-    /(температур[а-яё]*\s*(под|до|выше|за)?\s*(39|40|41)|жар.{0,20}(39|40|41))/iu,
-    /(судорог[а-яё]*|конвульси)/iu,
-    /(отравлен|отравил|выпил.{0,20}(хими|кислот|щёлоч|щелоч|таблет))/iu,
-    /(ожог.{0,30}(больш|обширн|сильн|кипяток|пламя))/iu,
-    /(парализ|онемел[а-яё]*\s+(половина|сторона|тело))/iu,
-    /(перелом\s+открыт|открытый\s+перелом|кость.{0,15}торчит)/iu,
-    /(аллерги|анафилак).{0,30}(шок|опух|задыха|отёк)/iu,
-];
-function isEmergencyMessage(text) {
-    return EMERGENCY_PATTERNS.some((re) => re.test(text));
-}
-const EMERGENCY_REPLY = 'Это похоже на экстренную ситуацию. Срочно позвоните в скорую помощь: **103** ' +
-    '(с мобильного — **112**). Если возможно, оставайтесь с пострадавшим до приезда ' +
-    'врачей. Запись в клинике в такой ситуации не нужна — медлить нельзя.';
 function extractTimeOfDay(text) {
     if (/(?<![а-яё])(утр(ом|енн)|с утр[аоу])/iu.test(text))
         return 'morning';
@@ -221,34 +161,22 @@ const CLINIC_SPECIALISTS = 'Терапевт, Невролог, Кардиоло
     'Аллерголог-иммунолог, Дерматовенеролог, Оториноларинголог, ' +
     'Онколог-маммолог, Нефролог, Проктолог, Врач УЗИ';
 let ChatService = ChatService_1 = class ChatService {
-    constructor(config, openAi, gigaChat, qwen, qwen3, booking, tokenUsageRepo) {
+    constructor(config, llm, prompts, profiles, pipeline, booking, tokenUsageRepo) {
         this.config = config;
-        this.openAi = openAi;
-        this.gigaChat = gigaChat;
-        this.qwen = qwen;
-        this.qwen3 = qwen3;
+        this.llm = llm;
+        this.prompts = prompts;
+        this.profiles = profiles;
+        this.pipeline = pipeline;
         this.booking = booking;
         this.tokenUsageRepo = tokenUsageRepo;
         this.logger = new common_1.Logger(ChatService_1.name);
         this.sessions = new Map();
         this.SESSION_TTL_MS = 30 * 60 * 1000;
-        const promptFile = path.resolve(__dirname, '../prompts/system-prompt.txt');
-        const defaultPrompt = fs.readFileSync(promptFile, 'utf-8').trim();
-        this.systemPrompt = this.config.get('CHAT_SYSTEM_PROMPT', defaultPrompt);
+        this.systemPromptOverride = this.config.get('CHAT_SYSTEM_PROMPT') || undefined;
         this.defaultProvider = this.config.get('CHAT_DEFAULT_PROVIDER') ?? 'gigachat';
     }
     async callLlm(provider, context, tools, model, forceText) {
-        switch (provider) {
-            case 'gigachat':
-                return this.gigaChat.complete(context, tools, model, forceText);
-            case 'qwen':
-                return this.qwen.complete(context, tools, model, forceText);
-            case 'qwen3':
-                return this.qwen3.complete(context, tools, model, forceText);
-            case 'openai':
-            default:
-                return this.openAi.complete(context, forceText ? [] : tools, model);
-        }
+        return this.llm.complete({ provider, messages: context, tools, model, forceText });
     }
     onModuleInit() {
         setInterval(() => this.cleanExpiredSessions(), 10 * 60 * 1000);
@@ -261,9 +189,22 @@ let ChatService = ChatService_1 = class ChatService {
         if (message.length > MAX_MESSAGE_LENGTH) {
             return { sessionId, reply: 'Сообщение слишком длинное. Пожалуйста, сократите запрос.', history: [] };
         }
-        if (isPromptInjection(message)) {
+        if ((0, guards_1.isPromptInjection)(message)) {
             this.logger.warn(`Prompt injection attempt in session ${sessionId}: "${message.slice(0, 100)}"`);
             return { sessionId, reply: 'Я могу помочь только с записью в клинику. Чем могу быть полезен?', history: [] };
+        }
+        const override = this.config.get('CHAT_ALLOW_ENGINE_OVERRIDE') === 'true' ? dto.engine : undefined;
+        if (clinicNetId && (override ?? this.profiles.forNet(clinicNetId).engine) === 'pipeline') {
+            let patient;
+            if (encryptedPatient) {
+                try {
+                    patient = decryptPatientData(encryptedPatient, this.config.get('PATIENT_DATA_PRIVATE_KEY', ''));
+                }
+                catch (err) {
+                    this.logger.warn(`Failed to decrypt patient data for session ${sessionId}: ${String(err)}`);
+                }
+            }
+            return this.pipeline.handle({ ...dto, clinicNetId }, { patient, defaultProvider: this.defaultProvider });
         }
         const session = this.getOrCreateSession(sessionId, provider, model);
         if (clientId !== undefined)
@@ -413,7 +354,9 @@ let ChatService = ChatService_1 = class ChatService {
         const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
         const dayNames = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
         const todayDayName = dayNames[today.getDay()];
-        let systemWithDate = `${this.systemPrompt}\nСегодня: ${todayStr} (${todayDayName}). ` +
+        const built = this.prompts.build('legacy', { clinicNetId: session.clinicNetId, mis: (0, mis_registry_service_1.toMisKind)(session.misType) }, {}, { coreOverride: this.systemPromptOverride });
+        session.promptHash = built.hash;
+        let systemWithDate = `${built.text}\nСегодня: ${todayStr} (${todayDayName}). ` +
             `Для слов "вторник"/"завтра"/"послезавтра" используй dayOfWeek; date — только для явных дат с числом.`;
         if (session.misType === 'medflex' && !session.patient) {
             systemWithDate +=
@@ -450,10 +393,10 @@ let ChatService = ChatService_1 = class ChatService {
         }
         let reply;
         try {
-            if (isEmergencyMessage(message)) {
-                reply = EMERGENCY_REPLY;
+            if ((0, guards_1.isEmergencyMessage)(message)) {
+                reply = guards_1.EMERGENCY_REPLY;
             }
-            else if (isSymptomMessage(message) && session.misType !== 'medflex') {
+            else if ((0, guards_1.isSymptomMessage)(message) && session.misType !== 'medflex') {
                 reply = await this.handleSymptomMessage(message, systemWithDate, session, sessionId);
             }
             else {
@@ -717,11 +660,12 @@ let ChatService = ChatService_1 = class ChatService {
         }
         return 'Не удалось обработать запрос. Попробуйте переформулировать.';
     }
-    getHistory(sessionId) {
-        return this.sessions.get(sessionId)?.messages ?? [];
+    async getHistory(sessionId) {
+        return this.sessions.get(sessionId)?.messages ?? (await this.pipeline.history(sessionId)) ?? [];
     }
-    clearSession(sessionId) {
+    async clearSession(sessionId) {
         this.sessions.delete(sessionId);
+        await this.pipeline.clear(sessionId);
     }
     getOrCreateSession(sessionId, provider, model) {
         if (!this.sessions.has(sessionId)) {
@@ -925,6 +869,8 @@ let ChatService = ChatService_1 = class ChatService {
             promptTokens: usage.promptTokens,
             completionTokens: usage.completionTokens,
             totalTokens: usage.totalTokens,
+            task: 'legacy',
+            promptHash: this.sessions.get(sessionId)?.promptHash ?? null,
         }).catch((err) => this.logger.warn(`Failed to save token usage: ${String(err)}`));
     }
     cleanExpiredSessions() {
@@ -946,10 +892,10 @@ exports.ChatService = ChatService = ChatService_1 = __decorate([
     (0, common_1.Injectable)(),
     __param(6, (0, typeorm_1.InjectRepository)(token_usage_entity_1.TokenUsage)),
     __metadata("design:paramtypes", [config_1.ConfigService,
-        openai_service_1.OpenAiService,
-        gigachat_service_1.GigaChatService,
-        qwen_service_1.QwenService,
-        qwen3_service_1.Qwen3Service,
+        llm_router_service_1.LlmRouter,
+        prompt_builder_service_1.PromptBuilder,
+        clinic_profile_service_1.ClinicProfileService,
+        pipeline_chat_service_1.PipelineChatService,
         booking_service_1.BookingService,
         typeorm_2.Repository])
 ], ChatService);

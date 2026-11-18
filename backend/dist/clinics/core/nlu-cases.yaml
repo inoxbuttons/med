@@ -1,0 +1,83 @@
+# Набор для оценки разбора реплик (NLU). Вызывает модель — запуск только по согласованию:
+#   docker exec -w /app med-backend-1 node dist/cli/nlu-eval.js --net=2 --provider=qwen3
+# expect — частичный фрейм: каждое указанное поле должно совпасть; «*» — поле должно быть заполнено.
+# Примерная стоимость прогона: ~40 вызовов × ~1,2 тыс. входных токенов.
+
+cases:
+  # ── запись ─────────────────────────────────────────────────────────────
+  - text: Запишите к Нестеровой на четверг в 15:00
+    expect: { goal: book, subject: doctor, entities: { doctorName: '*', dayOfWeek: thu, time: '15:00' } }
+  - text: Хочу к неврологу
+    expect: { goal: book, subject: speciality, entities: { speciality: '*' } }
+  - text: Нужно сделать УЗИ щитовидки
+    expect: { goal: book, subject: service, entities: { serviceQuery: '*' } }
+  - text: Хочу записаться на услугу "Магнитно-резонансный томограф"
+    expect: { goal: book, subject: service, entities: { serviceQuery: '*' } }
+  - text: Можно ребёнка к лору завтра утром?
+    expect: { goal: book, entities: { child: true, relativeDay: tomorrow, timeOfDay: morning } }
+  - text: Запишите меня к гинекологу на следующей неделе в среду
+    expect: { goal: book, entities: { dayOfWeek: wed, nextWeek: true } }
+  - text: на 25 ноября к терапевту
+    expect: { goal: book, entities: { date: '2026-11-25' } }
+  - text: Хочу на МРТ головы, направление есть
+    expect: { goal: book, subject: service, entities: { hasReferral: true } }
+
+  # ── симптомы ──────────────────────────────────────────────────────────
+  - text: Можно прийти сейчас с болью в животе?
+    expect: { goal: book, subject: symptom, entities: { symptom: '*', now: true } }
+  - text: Третий день болит голова и давление скачет, к кому идти?
+    expect: { subject: symptom, entities: { symptom: '*' } }
+  - text: У сына кашель и температура
+    expect: { subject: symptom, entities: { child: true } }
+
+  # ── вопросы ───────────────────────────────────────────────────────────
+  - text: Работает ли Нестерова в субботу?
+    expect: { goal: info, question: schedule, entities: { doctorName: '*', dayOfWeek: sat } }
+  - text: Сколько стоит приём кардиолога?
+    expect: { goal: info, question: price }
+  - text: Где вы находитесь?
+    expect: { goal: info, question: address }
+  - text: До скольки работаете в субботу?
+    expect: { goal: info, question: hours }
+  - text: Можно прийти без записи?
+    expect: { goal: info, question: walk_in }
+  - text: Делаете ли вы колоноскопию?
+    expect: { goal: info, question: has_service, entities: { serviceQuery: '*' } }
+  - text: Как подготовиться к УЗИ брюшной полости?
+    expect: { goal: info, question: preparation }
+
+  # ── записи пациента ───────────────────────────────────────────────────
+  - text: Отмените мою запись на завтра
+    expect: { goal: cancel, entities: { relativeDay: tomorrow } }
+  - text: Хочу перенести приём к урологу на пятницу
+    expect: { goal: reschedule, entities: { dayOfWeek: fri } }
+  - text: Отмените запись на завтра и запишите на пятницу
+    expect: { goal: cancel, next: [{ goal: book, entities: { dayOfWeek: fri } }] }
+  - text: На когда я записан?
+    expect: { goal: my_appointments }
+
+  # ── ответы в ходе диалога ─────────────────────────────────────────────
+  - text: нет, лучше в пятницу
+    expectation: { kind: confirm }
+    expect: { reply: no, entities: { dayOfWeek: fri }, edit: '*' }
+  - text: давайте ко второму врачу, но попозже
+    expectation: { kind: choice, options: [{ label: 'Петрова Анна, завтра 10:00' }, { label: 'Сидоров Олег, завтра 10:30' }] }
+    expect: { choice: 2 }
+  - text: а есть что-нибудь вечером?
+    expectation: { kind: choice, options: [{ label: 'завтра 10:00' }, { label: 'завтра 10:30' }] }
+    expect: { entities: { timeOfDay: evening } }
+  - text: я у него уже была в прошлом месяце
+    expectation: { kind: visit_type }
+    expect: { entities: { visitType: repeat } }
+  - text: иванова мария петровна 8 900 123 45 67 родилась 3 марта 1990
+    expectation: { kind: patient_data, fields: [fullName, phone, birthday] }
+    expect: { entities: { lastName: '*', firstName: '*', phone: '*', birthday: '1990-03-03' } }
+  - text: направления нет, а можно без него?
+    expectation: { kind: yes_no, field: hasReferral }
+    expect: { entities: { hasReferral: false } }
+
+  # ── прочее ────────────────────────────────────────────────────────────
+  - text: Какая завтра погода?
+    expect: { goal: other }
+  - text: Спасибо большое, всё понятно!
+    expect: { goal: smalltalk }

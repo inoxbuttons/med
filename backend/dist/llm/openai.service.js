@@ -14,6 +14,7 @@ exports.OpenAiService = void 0;
 const common_1 = require("@nestjs/common");
 const config_1 = require("@nestjs/config");
 const openai_1 = require("openai");
+const llm_types_1 = require("./llm.types");
 let OpenAiService = OpenAiService_1 = class OpenAiService {
     constructor(config) {
         this.config = config;
@@ -65,6 +66,24 @@ let OpenAiService = OpenAiService_1 = class OpenAiService {
             return { type: 'tool_call', toolName: tc.name, toolArgs: args, usage };
         }
         return { type: 'text', content: choice.message.content ?? '', usage };
+    }
+    async completeJson(req) {
+        const response = await this.client.chat.completions.create({
+            model: req.model ?? 'gpt-4o-mini',
+            temperature: 0,
+            messages: req.messages
+                .filter((m) => m.role !== 'function')
+                .map((m) => ({ role: m.role, content: m.content })),
+            response_format: {
+                type: 'json_schema',
+                json_schema: { name: req.schemaName, description: req.description, schema: req.schema, strict: false },
+            },
+        });
+        const raw = response.choices[0]?.message?.content ?? '';
+        const usage = response.usage
+            ? { promptTokens: response.usage.prompt_tokens, completionTokens: response.usage.completion_tokens, totalTokens: response.usage.total_tokens }
+            : undefined;
+        return { data: (0, llm_types_1.parseJsonObject)(raw), raw, usage };
     }
 };
 exports.OpenAiService = OpenAiService;

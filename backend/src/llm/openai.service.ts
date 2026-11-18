@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { ChatMessage } from '../chat/chat.types';
-import { CompletionResult, LlmTool, LlmUsage } from './llm.types';
+import { CompletionResult, JsonCompletionRequest, JsonCompletionResult, LlmTool, LlmUsage, parseJsonObject } from './llm.types';
 
 @Injectable()
 export class OpenAiService {
@@ -70,5 +70,25 @@ export class OpenAiService {
     }
 
     return { type: 'text', content: choice.message.content ?? '', usage };
+  }
+
+  /** Ответ по JSON-схеме (response_format json_schema). */
+  async completeJson(req: JsonCompletionRequest): Promise<JsonCompletionResult> {
+    const response = await this.client.chat.completions.create({
+      model: req.model ?? 'gpt-4o-mini',
+      temperature: 0,
+      messages: req.messages
+        .filter((m) => m.role !== 'function')
+        .map((m) => ({ role: m.role as 'system' | 'user' | 'assistant', content: m.content })),
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: req.schemaName, description: req.description, schema: req.schema, strict: false },
+      },
+    });
+    const raw = response.choices[0]?.message?.content ?? '';
+    const usage: LlmUsage | undefined = response.usage
+      ? { promptTokens: response.usage.prompt_tokens, completionTokens: response.usage.completion_tokens, totalTokens: response.usage.total_tokens }
+      : undefined;
+    return { data: parseJsonObject(raw), raw, usage };
   }
 }

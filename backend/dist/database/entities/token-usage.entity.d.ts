@@ -8,5 +8,7 @@ export declare class TokenUsage {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+    task: string | null;
+    promptHash: string | null;
     createdAt: Date;
 }

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ClinicPatient = exports.Person = exports.ServiceAppointment = exports.ServiceExceptionType = exports.ServiceException = exports.ServiceWorkingHours = exports.DoctorExceptionType = exports.DoctorException = exports.DoctorWorkingHours = exports.Appointment = exports.ServiceSchedule = exports.ServiceByClinic = exports.Service = exports.DoctorLocation = exports.Doctor = exports.Speciality = exports.MedField = exports.Clinic = exports.ClinicNet = exports.DB_ENTITIES = exports.DatabaseModule = void 0;
+exports.OperatorRequest = exports.ClinicPatient = exports.Person = exports.ServiceAppointment = exports.ServiceExceptionType = exports.ServiceException = exports.ServiceWorkingHours = exports.DoctorExceptionType = exports.DoctorException = exports.DoctorWorkingHours = exports.Appointment = exports.ServiceSchedule = exports.ServiceByClinic = exports.Service = exports.DoctorLocation = exports.Doctor = exports.Speciality = exports.MedField = exports.Clinic = exports.ClinicNet = exports.DB_ENTITIES = exports.DatabaseModule = void 0;
 var database_module_1 = require("./database.module");
 Object.defineProperty(exports, "DatabaseModule", { enumerable: true, get: function () { return database_module_1.DatabaseModule; } });
 Object.defineProperty(exports, "DB_ENTITIES", { enumerable: true, get: function () { return database_module_1.DB_ENTITIES; } });
@@ -40,4 +40,6 @@ var person_entity_1 = require("./entities/person.entity");
 Object.defineProperty(exports, "Person", { enumerable: true, get: function () { return person_entity_1.Person; } });
 var clinic_patient_entity_1 = require("./entities/clinic-patient.entity");
 Object.defineProperty(exports, "ClinicPatient", { enumerable: true, get: function () { return clinic_patient_entity_1.ClinicPatient; } });
+var operator_request_entity_1 = require("./entities/operator-request.entity");
+Object.defineProperty(exports, "OperatorRequest", { enumerable: true, get: function () { return operator_request_entity_1.OperatorRequest; } });
 //# sourceMappingURL=index.js.map

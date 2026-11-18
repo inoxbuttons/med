@@ -14,6 +14,7 @@ const clinic_net_entity_1 = require("../database/entities/clinic-net.entity");
 const local_db_module_1 = require("../integrations/local/local-db.module");
 const infoclinica_module_1 = require("../integrations/infoclinica/infoclinica.module");
 const medflex_module_1 = require("../integrations/medflex/medflex.module");
+const catalog_module_1 = require("../core/catalog/catalog.module");
 let BookingModule = class BookingModule {
 };
 exports.BookingModule = BookingModule;
@@ -24,6 +25,7 @@ exports.BookingModule = BookingModule = __decorate([
             local_db_module_1.LocalDbModule,
             infoclinica_module_1.InfclinicaModule,
             medflex_module_1.MedflexModule,
+            catalog_module_1.CatalogModule,
         ],
         providers: [booking_service_1.BookingService],
         exports: [booking_service_1.BookingService],

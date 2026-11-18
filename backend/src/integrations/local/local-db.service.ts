@@ -130,8 +130,11 @@ export class LocalDbService {
 
   // ── Clinics ────────────────────────────────────────────────────────────────
 
-  async getClinics(): Promise<ClinicInfo[]> {
-    const clinics = await this.clinicRepo.find({ order: { name: 'ASC' } });
+  async getClinics(clinicNetId?: number): Promise<ClinicInfo[]> {
+    const clinics = await this.clinicRepo.find({
+      where: clinicNetId ? { clinicNetId } : {},
+      order: { name: 'ASC' },
+    });
     return clinics.map((c) => ({
       id: c.id,
       name: c.name,
@@ -142,26 +145,33 @@ export class LocalDbService {
 
   // ── Doctors ────────────────────────────────────────────────────────────────
 
-  async findDoctors(speciality: string, clinicId?: number): Promise<DoctorInfo[]> {
+  async findDoctors(speciality: string, clinicId?: number, clinicNetId?: number): Promise<DoctorInfo[]> {
     const qb = this.doctorRepo
       .createQueryBuilder('d')
       .innerJoinAndSelect('d.speciality', 's')
       .innerJoin('doctor_locations', 'dl', 'dl.doctor_id = d.id')
+      .innerJoin('clinics', 'dc', 'dc.id = dl.clinic_id')
       .where('(s.name ILIKE :q OR d.name ILIKE :q)', { q: `%${speciality}%` });
 
     if (clinicId) {
       qb.andWhere('dl.clinic_id = :clinicId', { clinicId });
+    }
+    if (clinicNetId) {
+      qb.andWhere('dc.clinic_net_id = :clinicNetId', { clinicNetId });
     }
 
     const doctors = await qb.getMany();
     if (doctors.length === 0) return [];
 
     const doctorIds = doctors.map((d) => d.id);
-    const locations = await this.doctorLocationRepo
+    const locQb = this.doctorLocationRepo
       .createQueryBuilder('dl')
       .innerJoinAndSelect('dl.clinic', 'c')
-      .where('dl.doctor_id IN (:...ids)', { ids: doctorIds })
-      .getMany();
+      .where('dl.doctor_id IN (:...ids)', { ids: doctorIds });
+    if (clinicNetId) {
+      locQb.andWhere('c.clinic_net_id = :clinicNetId', { clinicNetId });
+    }
+    const locations = await locQb.getMany();
 
     const locationsByDoctor = new Map<number, DoctorLocation[]>();
     for (const loc of locations) {
@@ -185,27 +195,55 @@ export class LocalDbService {
 
   // ── Services ───────────────────────────────────────────────────────────────
 
-  async findServices(query: string, clinicId?: number): Promise<ServiceInfo[]> {
+  async findServices(query: string, clinicId?: number, clinicNetId?: number): Promise<ServiceInfo[]> {
     const qb = this.serviceRepo
       .createQueryBuilder('s')
       .leftJoinAndSelect('s.medField', 'mf')
       .innerJoin('services_by_clinics', 'sbc', 'sbc.service_id = s.id')
-      .where('s.name ILIKE :q', { q: `%${query}%` });
+      .innerJoin('clinics', 'sc', 'sc.id = sbc.clinic_id');
+
+    // Поиск по словам: все слова запроса должны встречаться в названии услуги или её направления,
+    // в любом порядке. Так «Консультация флеболога узи вен» находит «Консультация врача-флеболога + узи вен ...»,
+    // а «Компьютерный томограф» — все услуги направления «Компьютерный томограф» (КТ ...).
+    // Длинные слова сравниваются по основе: «томограф» ~ «томография», «резонансный» ~ «резонансная».
+    const words = (query ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 2).map(wordStem);
+    if (words.length === 0) {
+      qb.where('s.name ILIKE :q', { q: `%${query ?? ''}%` });
+    } else {
+      // Сокращение ищется и в полном виде: «УЗИ» находит «Ультразвуковое исследование ...».
+      words.forEach((w, i) => {
+        const variants = [w, ...(SERVICE_ABBREVIATIONS[w] ?? [])];
+        const params: Record<string, string> = {};
+        const cond = variants
+          .map((v, j) => {
+            params[`w${i}_${j}`] = `%${v}%`;
+            return `(s.name || ' ' || COALESCE(mf.name, '')) ILIKE :w${i}_${j}`;
+          })
+          .join(' OR ');
+        qb.andWhere(`(${cond})`, params);
+      });
+    }
 
     if (clinicId) {
       qb.andWhere('sbc.clinic_id = :clinicId', { clinicId });
     }
-    qb.limit(30);
+    if (clinicNetId) {
+      qb.andWhere('sc.clinic_net_id = :clinicNetId', { clinicNetId });
+    }
+    qb.take(30);
 
     const services = await qb.getMany();
     if (services.length === 0) return [];
 
     const serviceIds = services.map((s) => s.id);
-    const sbcs = await this.serviceByClinicRepo
+    const sbcQb = this.serviceByClinicRepo
       .createQueryBuilder('sbc')
       .innerJoinAndSelect('sbc.clinic', 'c')
-      .where('sbc.service_id IN (:...ids)', { ids: serviceIds })
-      .getMany();
+      .where('sbc.service_id IN (:...ids)', { ids: serviceIds });
+    if (clinicNetId) {
+      sbcQb.andWhere('c.clinic_net_id = :clinicNetId', { clinicNetId });
+    }
+    const sbcs = await sbcQb.getMany();
 
     const sbcByService = new Map<number, ServiceByClinic[]>();
     for (const sbc of sbcs) {
@@ -583,11 +621,11 @@ export class LocalDbService {
 
   // ── Clinic resolve ─────────────────────────────────────────────────────────
 
-  async resolveClinicIdByName(clinicId?: number, clinicName?: string): Promise<number | undefined> {
+  async resolveClinicIdByName(clinicId?: number, clinicName?: string, clinicNetId?: number): Promise<number | undefined> {
     if (clinicId) return clinicId;
     if (!clinicName) return undefined;
     const clinic = await this.clinicRepo.findOne({
-      where: { name: ILike(`%${clinicName}%`) },
+      where: { name: ILike(`%${clinicName}%`), ...(clinicNetId ? { clinicNetId } : {}) },
     });
     return clinic ? clinic.id : undefined;
   }
@@ -601,6 +639,7 @@ export class LocalDbService {
     date?: string;
     time?: string;
     mode?: SlotMode;
+    clinicNetId?: number;
   }): Promise<Array<{
     doctorId: number;
     doctorName: string;
@@ -609,9 +648,9 @@ export class LocalDbService {
     slot?: { date: string; time: string; clinicId: number; clinicName: string } | null;
     allSlots?: Array<{ date: string; time: string; clinicId: number; clinicName: string }>;
   }>> {
-    const resolvedClinicId = await this.resolveClinicIdByName(params.clinicId, params.clinicName);
+    const resolvedClinicId = await this.resolveClinicIdByName(params.clinicId, params.clinicName, params.clinicNetId);
 
-    const doctors = await this.findDoctors(params.speciality, resolvedClinicId);
+    const doctors = await this.findDoctors(params.speciality, resolvedClinicId, params.clinicNetId);
     if (doctors.length === 0) return [];
 
     const normalizedDate = params.date
@@ -699,8 +738,9 @@ export class LocalDbService {
     date: string;
     time: string;
     clinicId?: number;
+    clinicNetId?: number;
   }): Promise<{ available: (SlotGroup & { doctorId: number; doctorName: string })[]; nearest: (SlotGroup & { doctorId: number; doctorName: string })[] }> {
-    const doctors = await this.findDoctors(params.speciality, params.clinicId);
+    const doctors = await this.findDoctors(params.speciality, params.clinicId, params.clinicNetId);
     if (doctors.length === 0) return { available: [], nearest: [] };
 
     const resolvedDate = resolveRelativeDate(params.date)
@@ -981,6 +1021,7 @@ export class LocalDbService {
   async findDoctorConsultationServices(
     doctorId: number,
     clinicId?: number,
+    clinicNetId?: number,
   ): Promise<ConsultationServiceInfo[]> {
     const doctor = await this.doctorRepo
       .createQueryBuilder('d')
@@ -1009,6 +1050,9 @@ export class LocalDbService {
 
     if (clinicId) {
       qb.andWhere('sbc.clinic_id = :clinicId', { clinicId });
+    }
+    if (clinicNetId) {
+      qb.andWhere('c.clinic_net_id = :clinicNetId', { clinicNetId });
     }
 
     qb.select([
@@ -1320,14 +1364,15 @@ export class LocalDbService {
     args: Record<string, any>,
     clientId?: number,
     sessionId?: string,
+    clinicNetId?: number,
   ): Promise<unknown> {
     switch (name) {
       case 'get_clinics':
-        return this.getClinics();
+        return this.getClinics(clinicNetId);
       case 'find_doctors':
-        return this.findDoctors(args.speciality, args.clinicId);
+        return this.findDoctors(args.speciality, args.clinicId, clinicNetId);
       case 'find_services':
-        return this.findServices(args.query, args.clinicId);
+        return this.findServices(args.query, args.clinicId, clinicNetId);
       case 'get_available_slots': {
         const slotArgs = { ...args };
         let resolvedTarget: string | undefined = slotArgs.targetDate;
@@ -1352,6 +1397,7 @@ export class LocalDbService {
           date: args.date,
           time: args.time,
           clinicId: args.clinicId,
+          clinicNetId,
         });
       case 'find_doctors_and_slots': {
         const dsArgs = { ...args };
@@ -1369,6 +1415,7 @@ export class LocalDbService {
           date: dsArgs.date,
           time: validTime,
           mode: effectiveMode,
+          clinicNetId,
         });
       }
       case 'get_patient_appointments': {
@@ -1408,7 +1455,7 @@ export class LocalDbService {
         return this.bookAppointment(bookArgs);
       }
       case 'get_doctor_consultation_services':
-        return this.findDoctorConsultationServices(args.doctorId, args.clinicId);
+        return this.findDoctorConsultationServices(args.doctorId, args.clinicId, clinicNetId);
       case 'create_operator_request':
         return this.createOperatorRequest({
           clinicId: args.clinicId,
@@ -1538,6 +1585,18 @@ function resolveRelativeDate(expr: string): Date | null {
     }
   }
   return null;
+}
+
+/** Медицинские сокращения в поиске услуг -> основы полных названий. */
+const SERVICE_ABBREVIATIONS: Record<string, string[]> = {
+  узи: ['ультразвук'],
+  мрт: ['магнитно-резонанс'],
+  кт: ['компьютерн'],
+};
+
+/** Грубая основа слова для поиска: у слов от 6 букв отбрасываем окончание (до 3 букв, основа не короче 5). */
+function wordStem(word: string): string {
+  return word.length >= 6 ? word.slice(0, Math.max(5, word.length - 3)) : word;
 }
 
 function buildDateRange(mode: SlotMode, targetDate?: string): { from: Date; days: number } {

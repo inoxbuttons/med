@@ -22,6 +22,7 @@ const appointment_entity_1 = require("../../database/entities/appointment.entity
 const service_working_hours_entity_1 = require("../../database/entities/service-working-hours.entity");
 const service_exception_entity_1 = require("../../database/entities/service-exception.entity");
 const service_appointment_entity_1 = require("../../database/entities/service-appointment.entity");
+const operator_request_entity_1 = require("../../database/entities/operator-request.entity");
 let LocalDbModule = class LocalDbModule {
 };
 exports.LocalDbModule = LocalDbModule;
@@ -41,6 +42,7 @@ exports.LocalDbModule = LocalDbModule = __decorate([
                 service_working_hours_entity_1.ServiceWorkingHours,
                 service_exception_entity_1.ServiceException,
                 service_appointment_entity_1.ServiceAppointment,
+                operator_request_entity_1.OperatorRequest,
             ]),
         ],
         providers: [local_db_service_1.LocalDbService],

@@ -16,3 +16,4 @@ export { ServiceException, ServiceExceptionType } from './entities/service-excep
 export { ServiceAppointment } from './entities/service-appointment.entity';
 export { Person } from './entities/person.entity';
 export { ClinicPatient } from './entities/clinic-patient.entity';
+export { OperatorRequest } from './entities/operator-request.entity';

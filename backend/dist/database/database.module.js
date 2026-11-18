@@ -30,6 +30,7 @@ const clinic_patient_entity_1 = require("./entities/clinic-patient.entity");
 const token_usage_entity_1 = require("./entities/token-usage.entity");
 const messenger_contact_entity_1 = require("./entities/messenger-contact.entity");
 const notification_log_entity_1 = require("./entities/notification-log.entity");
+const operator_request_entity_1 = require("./entities/operator-request.entity");
 exports.DB_ENTITIES = [
     clinic_net_entity_1.ClinicNet,
     clinic_entity_1.Clinic,
@@ -51,6 +52,7 @@ exports.DB_ENTITIES = [
     token_usage_entity_1.TokenUsage,
     messenger_contact_entity_1.MessengerContact,
     notification_log_entity_1.NotificationLog,
+    operator_request_entity_1.OperatorRequest,
 ];
 let DatabaseModule = class DatabaseModule {
 };

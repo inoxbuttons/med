@@ -38,6 +38,22 @@ __decorate([
     __metadata("design:type", String)
 ], Service.prototype, "description", void 0);
 __decorate([
+    (0, typeorm_1.Column)({ default: false }),
+    __metadata("design:type", Boolean)
+], Service.prototype, "stationary", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: 'self_booking', default: true }),
+    __metadata("design:type", Boolean)
+], Service.prototype, "selfBooking", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: 'at_doctor_visit', default: false }),
+    __metadata("design:type", Boolean)
+], Service.prototype, "atDoctorVisit", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ name: 'price_from', default: false }),
+    __metadata("design:type", Boolean)
+], Service.prototype, "priceFrom", void 0);
+__decorate([
     (0, typeorm_1.OneToMany)(() => service_by_clinic_entity_1.ServiceByClinic, (sbc) => sbc.service),
     __metadata("design:type", Array)
 ], Service.prototype, "servicesByClinics", void 0);

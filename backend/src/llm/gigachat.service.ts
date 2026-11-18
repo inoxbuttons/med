@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChatMessage } from '../chat/chat.types';
-import { CompletionResult, LlmTool, LlmUsage } from './llm.types';
+import { CompletionResult, JsonCompletionRequest, JsonCompletionResult, LlmTool, LlmUsage } from './llm.types';
 
 interface GigaChatTokenResponse {
   access_token: string;
@@ -163,5 +163,45 @@ export class GigaChatService {
     }
 
     return { type: 'text', content: choice.message.content, usage };
+  }
+
+  /**
+   * Ответ по JSON-схеме через принудительный вызов функции: у GigaChat нет response_format,
+   * но аргументы function_call — это JSON по схеме parameters.
+   */
+  async completeJson(req: JsonCompletionRequest): Promise<JsonCompletionResult> {
+    const token = await this.getAccessToken();
+    const body = {
+      model: req.model ?? 'GigaChat-Pro',
+      temperature: 0.01,
+      messages: req.messages.filter((m) => m.role !== 'function').map((m) => ({ role: m.role, content: m.content })),
+      functions: [{ name: req.schemaName, description: req.description ?? req.schemaName, parameters: req.schema }],
+      function_call: { name: req.schemaName },
+    };
+    const response = await fetch(this.apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const text = await response.text().catch(() => response.statusText);
+      throw new Error(`GigaChat request failed: ${response.status} ${text}`);
+    }
+    const data: GigaChatCompletionResponse = await response.json();
+    const usage: LlmUsage | undefined = data.usage
+      ? { promptTokens: data.usage.prompt_tokens, completionTokens: data.usage.completion_tokens, totalTokens: data.usage.total_tokens }
+      : undefined;
+    const fc = data.choices[0]?.message?.function_call;
+    if (!fc) return { data: null, raw: data.choices[0]?.message?.content ?? '', usage };
+    const args = typeof fc.arguments === 'string' ? safeParse(fc.arguments) : (fc.arguments as unknown);
+    return { data: args, raw: typeof fc.arguments === 'string' ? fc.arguments : JSON.stringify(fc.arguments), usage };
+  }
+}
+
+function safeParse(s: string): unknown {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
   }
 }

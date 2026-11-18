@@ -11,13 +11,8 @@ export interface ChatMessage {
     functions_state_id?: string;
 }
 export type MisType = 'infoclinica' | 'medflex' | null;
-export interface PatientData {
-    firstName: string;
-    lastName: string;
-    secondName?: string;
-    phone: string;
-    birthday: string;
-}
+import type { PatientData } from '../core/domain/patient';
+export type { PatientData };
 export interface EncryptedPatient {
     k: string;
     iv: string;
@@ -34,11 +29,18 @@ export interface SendMessageDto {
     townId?: number;
     districtId?: number;
     encryptedPatient?: EncryptedPatient;
+    payload?: string;
+    engine?: 'tools' | 'pipeline';
 }
 export interface SendMessageResponse {
     sessionId: string;
     reply: string;
     history: ChatMessage[];
+    quickReplies?: Array<{
+        label: string;
+        payload?: string;
+    }>;
+    engine?: 'tools' | 'pipeline';
 }
 export interface PendingConfirmation {
     toolName: 'book_appointment' | 'reschedule_appointment' | 'cancel_appointment';
@@ -58,6 +60,7 @@ export interface PendingConflict {
 export type SessionState = 'idle' | 'conflict_resolution';
 export interface SessionData {
     messages: ChatMessage[];
+    promptHash?: string;
     provider: LlmProvider;
     model?: string;
     clientId?: number;

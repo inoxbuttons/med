@@ -17,6 +17,7 @@ import { ClinicPatient } from './entities/clinic-patient.entity';
 import { TokenUsage } from './entities/token-usage.entity';
 import { MessengerContact } from './entities/messenger-contact.entity';
 import { NotificationLog } from './entities/notification-log.entity';
-export declare const DB_ENTITIES: (typeof ClinicNet | typeof Clinic | typeof ServiceByClinic | typeof Service | typeof MedField | typeof Speciality | typeof Doctor | typeof DoctorLocation | typeof ServiceSchedule | typeof DoctorWorkingHours | typeof DoctorException | typeof ServiceWorkingHours | typeof ServiceException | typeof ServiceAppointment | typeof Person | typeof ClinicPatient | typeof TokenUsage | typeof MessengerContact | typeof NotificationLog)[];
+import { OperatorRequest } from './entities/operator-request.entity';
+export declare const DB_ENTITIES: (typeof ServiceByClinic | typeof Service | typeof Clinic | typeof MedField | typeof Speciality | typeof Doctor | typeof DoctorLocation | typeof ServiceSchedule | typeof ClinicNet | typeof DoctorWorkingHours | typeof DoctorException | typeof ServiceWorkingHours | typeof ServiceException | typeof ServiceAppointment | typeof OperatorRequest | typeof Person | typeof ClinicPatient | typeof TokenUsage | typeof MessengerContact | typeof NotificationLog)[];
 export declare class DatabaseModule {
 }

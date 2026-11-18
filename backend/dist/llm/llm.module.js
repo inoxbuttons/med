@@ -12,13 +12,15 @@ const openai_service_1 = require("./openai.service");
 const gigachat_service_1 = require("./gigachat.service");
 const qwen_service_1 = require("./qwen.service");
 const qwen3_service_1 = require("./qwen3.service");
+const llm_router_service_1 = require("./llm-router.service");
+const llm_port_1 = require("../core/ports/llm.port");
 let LlmModule = class LlmModule {
 };
 exports.LlmModule = LlmModule;
 exports.LlmModule = LlmModule = __decorate([
     (0, common_1.Module)({
-        providers: [openai_service_1.OpenAiService, gigachat_service_1.GigaChatService, qwen_service_1.QwenService, qwen3_service_1.Qwen3Service],
-        exports: [openai_service_1.OpenAiService, gigachat_service_1.GigaChatService, qwen_service_1.QwenService, qwen3_service_1.Qwen3Service],
+        providers: [openai_service_1.OpenAiService, gigachat_service_1.GigaChatService, qwen_service_1.QwenService, qwen3_service_1.Qwen3Service, llm_router_service_1.LlmRouter, { provide: llm_port_1.LLM_PORT, useExisting: llm_router_service_1.LlmRouter }],
+        exports: [openai_service_1.OpenAiService, gigachat_service_1.GigaChatService, qwen_service_1.QwenService, qwen3_service_1.Qwen3Service, llm_router_service_1.LlmRouter, llm_port_1.LLM_PORT],
     })
 ], LlmModule);
 //# sourceMappingURL=llm.module.js.map

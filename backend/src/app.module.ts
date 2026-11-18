@@ -7,6 +7,8 @@ import { AppService } from './app.service';
 import { McpModule } from './mcp/mcp.module';
 import { LlmModule } from './llm/llm.module';
 import { DatabaseModule } from './database';
+import { CoreModule } from './core/core.module';
+import { CatalogModule } from './core/catalog/catalog.module';
 import { ChatModule } from './chat/chat.module';
 import { ClinicConfigModule } from './clinic-config/clinic-config.module';
 import { MessengersModule } from './messengers/messengers.module';
@@ -18,6 +20,8 @@ import { NotificationsModule } from './notifications/notifications.module';
     // 30 запросов в минуту на IP — защита от спама и перерасхода LLM-бюджета
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 30 }]),
     DatabaseModule,
+    CoreModule,
+    CatalogModule,
     McpModule,
     LlmModule,
     ChatModule,

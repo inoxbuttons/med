@@ -24,14 +24,14 @@ export class ChatController {
 
   // Получить историю сессии
   @Get('history/:sessionId')
-  getHistory(@Param('sessionId') sessionId: string): ChatMessage[] {
+  getHistory(@Param('sessionId') sessionId: string): Promise<ChatMessage[]> {
     return this.chatService.getHistory(sessionId);
   }
 
   // Очистить сессию
   @Delete('session/:sessionId')
   @HttpCode(HttpStatus.NO_CONTENT)
-  clearSession(@Param('sessionId') sessionId: string): void {
-    this.chatService.clearSession(sessionId);
+  async clearSession(@Param('sessionId') sessionId: string): Promise<void> {
+    await this.chatService.clearSession(sessionId);
   }
 }

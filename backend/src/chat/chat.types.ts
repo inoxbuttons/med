@@ -17,16 +17,9 @@ export interface ChatMessage {
 /** Тип МИС, передаётся виджетом как параметр. Null — используется локальная БД. */
 export type MisType = 'infoclinica' | 'medflex' | null;
 
-/** Данные пациента, получаемые с сайта клиники и хранящиеся в сессии. */
-export interface PatientData {
-  firstName: string;
-  lastName: string;
-  secondName?: string;
-  /** Телефон в формате 79XXXXXXXXX (11 цифр) — используется как patient_id в MedFlex */
-  phone: string;
-  /** Дата рождения YYYY-MM-DD */
-  birthday: string;
-}
+/** Данные пациента, получаемые с сайта клиники и хранящиеся в сессии. Определены в домене. */
+import type { PatientData } from '../core/domain/patient';
+export type { PatientData };
 
 /**
  * Гибридно-зашифрованный payload с данными пациента.
@@ -61,12 +54,26 @@ export interface SendMessageDto {
    * После расшифровки в session.patient — дальше не нужны.
    */
   encryptedPatient?: EncryptedPatient;
+  /**
+   * Нажатая кнопка (движок pipeline): "choice:2", "yes", "no", "book:service:<название>",
+   * "book:doctor:<фамилия>". message при этом — подпись кнопки для истории.
+   */
+  payload?: string;
+  /**
+   * Принудительный выбор движка — только для тестов, работает при CHAT_ALLOW_ENGINE_OVERRIDE=true.
+   * Иначе движок берётся из профиля сети.
+   */
+  engine?: 'tools' | 'pipeline';
 }
 
 export interface SendMessageResponse {
   sessionId: string;
   reply: string;
   history: ChatMessage[];
+  /** Кнопки быстрого ответа (движок pipeline). */
+  quickReplies?: Array<{ label: string; payload?: string }>;
+  /** Каким движком обработан ход: tools (модель с инструментами) или pipeline. */
+  engine?: 'tools' | 'pipeline';
 }
 
 /**
@@ -103,6 +110,8 @@ export type SessionState = 'idle' | 'conflict_resolution';
 
 export interface SessionData {
   messages: ChatMessage[];
+  /** Версия собранного промпта (PromptBuilder) — пишется в token_usage. */
+  promptHash?: string;
   provider: LlmProvider;
   model?: string;
   clientId?: number;

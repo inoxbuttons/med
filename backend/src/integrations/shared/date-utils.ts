@@ -20,10 +20,10 @@ const WEEKDAY_INDEX: Record<string, number> = {
  *
  * Принимает каноническую форму (понедельник…воскресенье), null если неизвестно.
  */
-export function nextWeekdayDate(canonical: string, weekOffset = 0): string | null {
+export function nextWeekdayDate(canonical: string, weekOffset = 0, now: Date = new Date()): string | null {
   const target = WEEKDAY_INDEX[canonical];
   if (target === undefined) return null;
-  const today = new Date();
+  const today = new Date(now);
   today.setHours(0, 0, 0, 0);
   const jsDay = today.getDay();
   const currentRu = jsDay === 0 ? 7 : jsDay;

@@ -7,3 +7,4 @@ dist/
 .DS_Store
 # tests/results — артефакты прогона интеграционных тестов, регенерируются
 tests/results/
+*.tsbuildinfo

@@ -63,6 +63,16 @@ class TelegramBotInstance {
                 await this.handleChat(ctx, chatId, ctx.message.text, session.clientId);
             }
         });
+        this.bot.on('callback_query', async (ctx) => {
+            const data = 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
+            await ctx.answerCbQuery().catch(() => undefined);
+            if (!data || !ctx.chat)
+                return;
+            const chatId = String(ctx.chat.id);
+            const session = this.getSession(chatId);
+            const label = session.buttons?.[data] ?? data;
+            await this.handleChat(ctx, chatId, label, session.clientId, data.startsWith('t:') ? undefined : data);
+        });
         this.bot.catch((err, ctx) => {
             this.logger.error(`[${this.cfg.clinicNetName}] Telegram error ${ctx.chat?.id}: ${err}`);
         });
@@ -80,7 +90,7 @@ class TelegramBotInstance {
             await ctx.reply('Номер не найден. Продолжаем без идентификации.\n\nЧем могу помочь?');
         }
     }
-    async handleChat(ctx, chatId, text, clientId) {
+    async handleChat(ctx, chatId, text, clientId, payload) {
         try {
             await ctx.sendChatAction('typing');
             const response = await this.chatService.sendMessage({
@@ -90,9 +100,12 @@ class TelegramBotInstance {
                 clientId,
                 clinicNetId: this.cfg.clinicNetId,
                 misType: this.cfg.misType,
+                payload,
             });
-            for (const chunk of splitMessage(response.reply)) {
-                await this.safeReply(ctx, chunk);
+            const chunks = splitMessage(response.reply);
+            const keyboard = this.keyboard(chatId, response.quickReplies);
+            for (let i = 0; i < chunks.length; i++) {
+                await this.safeReply(ctx, chunks[i], i === chunks.length - 1 ? keyboard : undefined);
             }
         }
         catch (err) {
@@ -100,13 +113,26 @@ class TelegramBotInstance {
             await ctx.reply('Произошла ошибка. Попробуйте ещё раз.');
         }
     }
-    async safeReply(ctx, text) {
+    async safeReply(ctx, text, keyboard) {
+        const extra = keyboard ? { reply_markup: keyboard } : {};
         try {
-            await ctx.reply(text, { parse_mode: 'Markdown' });
+            await ctx.reply(text, { parse_mode: 'Markdown', ...extra });
         }
         catch {
-            await ctx.reply(text);
+            await ctx.reply(text, extra);
         }
+    }
+    keyboard(chatId, quickReplies) {
+        const session = this.getSession(chatId);
+        session.buttons = {};
+        if (!quickReplies?.length)
+            return undefined;
+        const rows = quickReplies.slice(0, 8).map((q, i) => {
+            const data = q.payload && Buffer.byteLength(q.payload) <= 64 ? q.payload : `t:${i}`;
+            session.buttons[data] = q.label;
+            return [{ text: q.label.slice(0, 60), callback_data: data }];
+        });
+        return { inline_keyboard: rows };
     }
     getSession(chatId) {
         if (!this.sessions.has(chatId))

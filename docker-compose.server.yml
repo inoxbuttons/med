@@ -6,3 +6,8 @@ services:
       QWEN3_BASE_URL: ${QWEN3_BASE_URL:-https://foundation-models.api.cloud.ru/v1}
       QWEN3_MODEL: ${QWEN3_MODEL:-openai/gpt-oss-120b}
       NOTIFICATION_SCHEDULER_INTERVAL_MINUTES: "30"
+      # Эмбеддинги каталога (cloud.ru, платно). false — поиск только по тексту и триграммам.
+      EMBEDDINGS_ENABLED: ${EMBEDDINGS_ENABLED:-false}
+      EMBEDDINGS_MODEL: ${EMBEDDINGS_MODEL:-BAAI/bge-m3}
+      # Тесты: разрешить поле engine в запросе (pipeline/tools). На проде — false.
+      CHAT_ALLOW_ENGINE_OVERRIDE: ${CHAT_ALLOW_ENGINE_OVERRIDE:-false}

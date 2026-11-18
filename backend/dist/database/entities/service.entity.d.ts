@@ -6,5 +6,9 @@ export declare class Service {
     medField: MedField;
     name: string;
     description: string;
+    stationary: boolean;
+    selfBooking: boolean;
+    atDoctorVisit: boolean;
+    priceFrom: boolean;
     servicesByClinics: ServiceByClinic[];
 }

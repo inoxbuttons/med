@@ -25,8 +25,8 @@ let ChatController = class ChatController {
     getHistory(sessionId) {
         return this.chatService.getHistory(sessionId);
     }
-    clearSession(sessionId) {
-        this.chatService.clearSession(sessionId);
+    async clearSession(sessionId) {
+        await this.chatService.clearSession(sessionId);
     }
 };
 exports.ChatController = ChatController;
@@ -43,7 +43,7 @@ __decorate([
     __param(0, (0, common_1.Param)('sessionId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
-    __metadata("design:returntype", Array)
+    __metadata("design:returntype", Promise)
 ], ChatController.prototype, "getHistory", null);
 __decorate([
     (0, common_1.Delete)('session/:sessionId'),
@@ -51,7 +51,7 @@ __decorate([
     __param(0, (0, common_1.Param)('sessionId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], ChatController.prototype, "clearSession", null);
 exports.ChatController = ChatController = __decorate([
     (0, common_1.Controller)('chat'),
