@@ -475,8 +475,10 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
             visitServiceId: s.visit?.id,
             patient: this.patient(turn),
         });
-        if (res.status === 'booked')
+        if (res.status === 'booked') {
+            this.rememberBooked(turn, res.appointmentRef);
             return this.finish(turn, { text: turn.T.t('booked', { summary: this.summary(turn) }) });
+        }
         if (res.status === 'conflict') {
             s.conflictRef = res.existingRef;
             const options = [
@@ -501,6 +503,8 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
         const ref = s.conflictRef;
         const cancelled = await turn.booking.cancel(ref, this.patient(turn));
         s.conflictRef = undefined;
+        if (cancelled.success)
+            this.forgetBooked(turn, ref);
         if (!cancelled.success)
             return this.finish(turn, { text: turn.T.t('cancelFailed', { reason: cancelled.message }) });
         return this.doBook(turn);
@@ -600,13 +604,12 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
     async listAppointments(turn) {
         const caps = turn.booking.capabilities();
         const p = this.patient(turn);
-        if (caps.patientAppointments === 'none')
-            return { text: turn.T.t('needLogin') };
-        if (caps.patientAppointments === 'client_id' && !p.clientId)
-            return { text: turn.T.t('needLogin') };
-        if (caps.patientAppointments === 'phone' && !p.data?.phone)
-            return { text: turn.T.t('needLogin') };
-        return turn.booking.patientAppointments(p);
+        const booked = turn.session.booked ?? [];
+        const canList = (caps.patientAppointments === 'client_id' && !!p.clientId) || (caps.patientAppointments === 'phone' && !!p.data?.phone);
+        if (!canList)
+            return booked.length ? booked : { text: turn.T.t('needLogin') };
+        const fromMis = await turn.booking.patientAppointments(p);
+        return [...fromMis, ...booked.filter((b) => !fromMis.some((m) => m.ref === b.ref))];
     }
     async myAppointments(turn) {
         const list = await this.listAppointments(turn);
@@ -668,6 +671,8 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
         if (!a)
             return this.changeAppointment(turn);
         const res = await turn.booking.cancel(a.ref, this.patient(turn));
+        if (res.success)
+            this.forgetBooked(turn, a.ref);
         return this.finish(turn, { text: res.success ? turn.T.t('cancelled') : turn.T.t('cancelFailed', { reason: res.message }) });
     }
     async doReschedule(turn) {
@@ -680,8 +685,11 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
             serviceId: s.target.kind === 'service' ? s.target.serviceId : undefined,
             patient: this.patient(turn),
         });
-        if (res.status === 'booked')
+        if (res.status === 'booked') {
+            this.forgetBooked(turn, s.appointment.ref);
+            this.rememberBooked(turn, res.appointmentRef);
             return this.finish(turn, { text: turn.T.t('rescheduled', { summary: this.summary(turn) }) });
+        }
         return this.finish(turn, { text: turn.T.t('bookFailed', { reason: res.message }) });
     }
     async freeAnswer(turn) {
@@ -719,7 +727,32 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
         return fields.filter((f) => (f === 'fullName' ? !(p?.lastName && p?.firstName) : !p?.[f]));
     }
     patient(turn) {
-        return { clientId: turn.session.clientId, data: turn.session.patient };
+        return { clientId: turn.session.clientId, data: turn.session.patient, sessionRefs: (turn.session.booked ?? []).map((b) => b.ref) };
+    }
+    rememberBooked(turn, ref) {
+        const s = turn.state;
+        const slot = s.slot;
+        if (!ref || !slot)
+            return;
+        const t = s.target;
+        const a = {
+            ref,
+            kind: t?.kind === 'service' ? 'service' : 'doctor',
+            date: slot.date,
+            time: slot.time,
+            clinicId: slot.clinicId,
+            clinicName: slot.clinicName,
+            doctorId: t?.kind === 'service' ? undefined : slot.doctorId,
+            doctorName: slot.doctorName ?? (t?.kind === 'doctor' ? t.name : undefined),
+            speciality: t?.kind === 'speciality' ? t.title : t?.kind === 'doctor' ? t.speciality : undefined,
+            serviceId: t?.kind === 'service' ? t.serviceId : undefined,
+            serviceName: t?.kind === 'service' ? t.name : undefined,
+        };
+        turn.session.booked = [...(turn.session.booked ?? []).filter((b) => b.ref !== ref), a];
+    }
+    forgetBooked(turn, ref) {
+        if (turn.session.booked)
+            turn.session.booked = turn.session.booked.filter((b) => b.ref !== ref);
     }
     summary(turn) {
         const s = turn.state;

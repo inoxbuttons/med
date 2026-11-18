@@ -131,7 +131,8 @@ export class LocalBookingAdapter implements BookingPort {
       clinicId: req.slot.clinicId,
       newStartTime: req.slot.start,
       patientId: req.patient.clientId,
-      comment: req.comment,
+      // Гость: данные пациента — в комментарии новой записи, как при записи.
+      comment: bookingComment(req.patient, req.comment),
     });
     return this.outcome(res, req.doctorId ? 'doctor' : 'service');
   }
@@ -152,7 +153,9 @@ export class LocalBookingAdapter implements BookingPort {
   /** Запись принадлежит пациенту и сети — иначе отменять/переносить нельзя. */
   private async findOwn(ref: string, patient: PatientIdentity) {
     const parsed = parseLocalRef(ref);
-    if (!parsed || !patient.clientId) return null;
+    if (!parsed) return null;
+    if (patient.sessionRefs?.includes(ref)) return parsed;
+    if (!patient.clientId) return null;
     const mine = await this.patientAppointments(patient);
     return mine.some((a) => a.ref === ref) ? parsed : null;
   }

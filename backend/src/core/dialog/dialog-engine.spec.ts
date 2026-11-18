@@ -325,6 +325,43 @@ describe('DialogEngine: модель повторяет выбранное из 
   });
 });
 
+describe('DialogEngine: гость отменяет/переносит запись этого диалога', () => {
+  const BOOK = {
+    'Запишите к Нестеровой на четверг в 15:00': { goal: 'book', subject: 'doctor', entities: { doctorName: 'Нестерова', dayOfWeek: 'thu', time: '15:00' } },
+  } as Record<string, Frame>;
+  async function bookAsGuest(say: (t: string) => Promise<any>) {
+    await say('Запишите к Нестеровой на четверг в 15:00');
+    await say('первичный');
+    await say('Иванова Мария Петровна, 8 900 123-45-67, 01.02.1990');
+    const r = await say('да');
+    expect(r.text).toContain('Вы записаны');
+  }
+
+  it('отмена: запись из этого диалога видна гостю и отменяется', async () => {
+    const { say, booking } = setup({ ...BOOK, 'отмените мою запись': { goal: 'cancel', entities: {} } });
+    await bookAsGuest(say);
+    let r = await say('отмените мою запись');
+    expect(r.text).toContain('Отменить запись: 19 ноября 15:00');
+    r = await say('да');
+    expect(booking.calls.cancel).toEqual(['doctor:1']);
+    expect(r.text).toContain('Запись отменена.');
+    r = await say('мои записи');
+    expect(r.text).toContain('личный кабинет');
+  });
+
+  it('перенос: новая запись с данными гостя, старая заменена', async () => {
+    const { say, booking, session } = setup({ ...BOOK, 'перенесите запись на субботу': { goal: 'reschedule', entities: { dayOfWeek: 'sat' } } });
+    await bookAsGuest(say);
+    let r = await say('перенесите запись на субботу');
+    expect(r.text).toContain('Суббота, 21 ноября');
+    r = await say('10:00');
+    expect(r.text).toContain('Перенести');
+    r = await say('да');
+    expect(booking.calls.reschedule[0]).toMatchObject({ ref: 'doctor:1', r: { patient: { data: { lastName: 'Иванова' }, sessionRefs: ['doctor:1'] } } });
+    expect(session.booked?.map((b) => `${b.ref} ${b.date} ${b.time}`)).toEqual(['doctor:2 2026-11-21 10:00']);
+  });
+});
+
 describe('DialogEngine: подтверждение только явное', () => {
   it('«Первичный» в ответ на «Подтверждаете запись?» не записывает, даже если модель вернула reply: yes', async () => {
     const { say, booking } = setup({

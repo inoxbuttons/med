@@ -75,6 +75,7 @@ export interface DialogSession {
     provider: import('../../chat/chat.types').LlmProvider;
     model?: string;
     state: DialogState;
+    booked?: Appointment[];
     messages: Array<{
         role: 'user' | 'assistant';
         content: string;

@@ -16,4 +16,6 @@ export interface PatientData {
 export interface PatientIdentity {
   clientId?: number;
   data?: PatientData;
+  /** Записи, созданные в этом диалоге: гость может отменить/перенести их без входа в кабинет. */
+  sessionRefs?: string[];
 }

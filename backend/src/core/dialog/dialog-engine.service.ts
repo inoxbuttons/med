@@ -536,7 +536,10 @@ export class DialogEngine {
       visitServiceId: s.visit?.id,
       patient: this.patient(turn),
     });
-    if (res.status === 'booked') return this.finish(turn, { text: turn.T.t('booked', { summary: this.summary(turn) }) });
+    if (res.status === 'booked') {
+      this.rememberBooked(turn, res.appointmentRef);
+      return this.finish(turn, { text: turn.T.t('booked', { summary: this.summary(turn) }) });
+    }
     if (res.status === 'conflict') {
       s.conflictRef = res.existingRef;
       const options: Option[] = [
@@ -562,6 +565,7 @@ export class DialogEngine {
     const ref = s.conflictRef!;
     const cancelled = await turn.booking.cancel(ref, this.patient(turn));
     s.conflictRef = undefined;
+    if (cancelled.success) this.forgetBooked(turn, ref);
     if (!cancelled.success) return this.finish(turn, { text: turn.T.t('cancelFailed', { reason: cancelled.message }) });
     return this.doBook(turn);
   }
@@ -664,10 +668,13 @@ export class DialogEngine {
   private async listAppointments(turn: Turn): Promise<Appointment[] | Reply> {
     const caps = turn.booking.capabilities();
     const p = this.patient(turn);
-    if (caps.patientAppointments === 'none') return { text: turn.T.t('needLogin') };
-    if (caps.patientAppointments === 'client_id' && !p.clientId) return { text: turn.T.t('needLogin') };
-    if (caps.patientAppointments === 'phone' && !p.data?.phone) return { text: turn.T.t('needLogin') };
-    return turn.booking.patientAppointments(p);
+    const booked = turn.session.booked ?? [];
+    const canList =
+      (caps.patientAppointments === 'client_id' && !!p.clientId) || (caps.patientAppointments === 'phone' && !!p.data?.phone);
+    // Гость без кабинета видит записи, сделанные в этом диалоге.
+    if (!canList) return booked.length ? booked : { text: turn.T.t('needLogin') };
+    const fromMis = await turn.booking.patientAppointments(p);
+    return [...fromMis, ...booked.filter((b) => !fromMis.some((m) => m.ref === b.ref))];
   }
 
   private async myAppointments(turn: Turn): Promise<Reply> {
@@ -728,6 +735,7 @@ export class DialogEngine {
     const a = turn.state.appointment;
     if (!a) return this.changeAppointment(turn);
     const res = await turn.booking.cancel(a.ref, this.patient(turn));
+    if (res.success) this.forgetBooked(turn, a.ref);
     return this.finish(turn, { text: res.success ? turn.T.t('cancelled') : turn.T.t('cancelFailed', { reason: res.message }) });
   }
 
@@ -740,7 +748,11 @@ export class DialogEngine {
       serviceId: s.target.kind === 'service' ? s.target.serviceId : undefined,
       patient: this.patient(turn),
     });
-    if (res.status === 'booked') return this.finish(turn, { text: turn.T.t('rescheduled', { summary: this.summary(turn) }) });
+    if (res.status === 'booked') {
+      this.forgetBooked(turn, s.appointment.ref);
+      this.rememberBooked(turn, res.appointmentRef);
+      return this.finish(turn, { text: turn.T.t('rescheduled', { summary: this.summary(turn) }) });
+    }
     return this.finish(turn, { text: turn.T.t('bookFailed', { reason: res.message }) });
   }
 
@@ -785,7 +797,33 @@ export class DialogEngine {
   }
 
   private patient(turn: Turn): PatientIdentity {
-    return { clientId: turn.session.clientId, data: turn.session.patient };
+    return { clientId: turn.session.clientId, data: turn.session.patient, sessionRefs: (turn.session.booked ?? []).map((b) => b.ref) };
+  }
+
+  /** Запомнить запись этого диалога (для отмены/переноса гостем). */
+  private rememberBooked(turn: Turn, ref: string | null | undefined): void {
+    const s = turn.state;
+    const slot = s.slot;
+    if (!ref || !slot) return;
+    const t = s.target;
+    const a: Appointment = {
+      ref,
+      kind: t?.kind === 'service' ? 'service' : 'doctor',
+      date: slot.date,
+      time: slot.time,
+      clinicId: slot.clinicId,
+      clinicName: slot.clinicName,
+      doctorId: t?.kind === 'service' ? undefined : slot.doctorId,
+      doctorName: slot.doctorName ?? (t?.kind === 'doctor' ? t.name : undefined),
+      speciality: t?.kind === 'speciality' ? t.title : t?.kind === 'doctor' ? t.speciality : undefined,
+      serviceId: t?.kind === 'service' ? t.serviceId : undefined,
+      serviceName: t?.kind === 'service' ? t.name : undefined,
+    };
+    turn.session.booked = [...(turn.session.booked ?? []).filter((b) => b.ref !== ref), a];
+  }
+
+  private forgetBooked(turn: Turn, ref: string): void {
+    if (turn.session.booked) turn.session.booked = turn.session.booked.filter((b) => b.ref !== ref);
   }
 
   private summary(turn: Turn): string {

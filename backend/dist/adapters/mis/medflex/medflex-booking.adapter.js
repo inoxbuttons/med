@@ -175,6 +175,8 @@ class MedflexBookingAdapter {
         return (0, operator_requests_1.createOperatorRequest)(this.local, input);
     }
     async isOwn(ref, patient) {
+        if (patient.sessionRefs?.includes(ref))
+            return true;
         return (await this.patientAppointments(patient)).some((a) => a.ref === ref);
     }
     async doctorSlots(doc, q, booking) {

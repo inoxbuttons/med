@@ -59,6 +59,8 @@ export interface DialogSession {
   provider: import('../../chat/chat.types').LlmProvider;
   model?: string;
   state: DialogState;
+  /** Записи, сделанные в этом диалоге (гость может отменить/перенести без входа). */
+  booked?: Appointment[];
   /** История для клиента и для короткого контекста NLU. */
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
   updatedAt: number;

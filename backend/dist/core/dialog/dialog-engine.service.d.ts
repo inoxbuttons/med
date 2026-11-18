@@ -65,6 +65,8 @@ export declare class DialogEngine {
     private askPatientData;
     private missingPatientFields;
     private patient;
+    private rememberBooked;
+    private forgetBooked;
     private summary;
     private answerCtx;
     private usage;

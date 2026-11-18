@@ -198,6 +198,7 @@ export class MedflexBookingAdapter implements BookingPort {
   }
 
   private async isOwn(ref: string, patient: PatientIdentity): Promise<boolean> {
+    if (patient.sessionRefs?.includes(ref)) return true;
     return (await this.patientAppointments(patient)).some((a) => a.ref === ref);
   }
 

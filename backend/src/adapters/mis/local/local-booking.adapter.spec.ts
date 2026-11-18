@@ -103,6 +103,21 @@ describe('LocalBookingAdapter', () => {
     expect(await adapter.cancel('doctor:5', {})).toMatchObject({ success: false });
   });
 
+  it('гость отменяет и переносит запись, сделанную в этом диалоге (sessionRefs)', async () => {
+    const { local, adapter } = setup();
+    expect(await adapter.cancel('doctor:7', { sessionRefs: ['doctor:7'] })).toMatchObject({ success: true });
+    expect(local.cancelAppointment).toHaveBeenCalledWith(7, 'doctor');
+    expect(await adapter.cancel('doctor:8', { sessionRefs: ['doctor:7'] })).toMatchObject({ success: false });
+
+    local.rescheduleAppointment.mockResolvedValue({ success: true, appointmentId: 9, message: 'ok' });
+    const res = await adapter.reschedule('doctor:7', {
+      slot, doctorId: 5,
+      patient: { sessionRefs: ['doctor:7'], data: { lastName: 'Иванов', firstName: 'Иван', phone: '79001234567', birthday: '1990-01-01' } },
+    });
+    expect(res).toMatchObject({ status: 'booked', appointmentRef: 'doctor:9' });
+    expect(local.rescheduleAppointment.mock.calls[0][0].comment).toContain('Иванов Иван');
+  });
+
   it('parseLocalRef', () => {
     expect(parseLocalRef('service:12')).toEqual({ kind: 'service', id: 12 });
     expect(parseLocalRef('12')).toBeNull();

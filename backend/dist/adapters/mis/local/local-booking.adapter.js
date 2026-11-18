@@ -106,7 +106,7 @@ class LocalBookingAdapter {
             clinicId: req.slot.clinicId,
             newStartTime: req.slot.start,
             patientId: req.patient.clientId,
-            comment: req.comment,
+            comment: (0, patient_comment_1.bookingComment)(req.patient, req.comment),
         });
         return this.outcome(res, req.doctorId ? 'doctor' : 'service');
     }
@@ -124,7 +124,11 @@ class LocalBookingAdapter {
     }
     async findOwn(ref, patient) {
         const parsed = parseLocalRef(ref);
-        if (!parsed || !patient.clientId)
+        if (!parsed)
+            return null;
+        if (patient.sessionRefs?.includes(ref))
+            return parsed;
+        if (!patient.clientId)
             return null;
         const mine = await this.patientAppointments(patient);
         return mine.some((a) => a.ref === ref) ? parsed : null;

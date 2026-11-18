@@ -8,4 +8,5 @@ export interface PatientData {
 export interface PatientIdentity {
     clientId?: number;
     data?: PatientData;
+    sessionRefs?: string[];
 }
