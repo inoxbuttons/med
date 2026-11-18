@@ -198,13 +198,16 @@
     return [];
   }
 
+  // Строки (подсказки по тексту) или {label, payload} от сервера (движок pipeline).
   function renderSuggestions(suggestions) {
     suggestionsEl.innerHTML = '';
-    suggestions.forEach(label => {
+    suggestions.forEach(item => {
+      const label = typeof item === 'string' ? item : item.label;
+      const payload = typeof item === 'string' ? null : (item.payload || null);
       const btn = document.createElement('button');
       btn.className = 'suggestion-btn';
       btn.textContent = label;
-      btn.onclick = () => { sendText(label); };
+      btn.onclick = () => { sendText(label, payload); };
       suggestionsEl.appendChild(btn);
     });
   }
@@ -236,7 +239,7 @@
     if (t) t.remove();
   }
 
-  async function sendText(text) {
+  async function sendText(text, payload) {
     if (!text) return;
     renderSuggestions([]);
     addMessage(text, 'user');
@@ -255,6 +258,7 @@
         body: JSON.stringify({
           sessionId: SESSION_ID,
           message: text,
+          ...(payload            ? { payload }                         : {}),
           ...(CLINIC_NET_ID      ? { clinicNetId: CLINIC_NET_ID }      : {}),
           ...(MIS_TYPE           ? { misType: MIS_TYPE }               : {}),
           ...(encryptedPatient   ? { encryptedPatient }                : {}),
@@ -264,7 +268,7 @@
       removeTyping();
       const reply = data.reply || 'Нет ответа';
       addMessage(reply, 'bot');
-      renderSuggestions(detectSuggestions(reply));
+      renderSuggestions(data.quickReplies && data.quickReplies.length ? data.quickReplies : detectSuggestions(reply));
     } catch (e) {
       removeTyping();
       addMessage('Ошибка подключения к серверу', 'bot');
