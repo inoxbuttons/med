@@ -39,6 +39,10 @@ const entities = z.object({
   birthday: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
+export const ENTITY_KEYS = Object.keys(entities.shape) as Array<keyof z.infer<typeof entities>>;
+/** Поля, которые не уходят в модель как «текущий запрос»: персональные данные. */
+export const PATIENT_KEYS = ['lastName', 'firstName', 'secondName', 'phone', 'birthday'] as const;
+
 const baseFrame = z.object({
   /** Нет цели — реплика продолжает текущий шаг (ответ на вопрос, выбор, поправка). */
   goal: z.enum(GOALS).optional(),
@@ -51,6 +55,13 @@ const baseFrame = z.object({
   choice: z.number().int().min(1).optional(),
   /** Какие поля entities пациент исправляет («нет, лучше в четверг» → ["dayOfWeek"]). */
   edit: z.array(z.string()).optional(),
+  /** Поля текущего запроса, которые пациент отменил («в любое время» → ["time","timeOfDay"]). */
+  unset: z.array(z.enum(ENTITY_KEYS as [string, ...string[]])).optional(),
+  /**
+   * Короткая реплика пациенту — когда реплика не сводится к данным (вопрос не по сценарию,
+   * возражение, непонятное). Без фактов о времени, ценах и записи: их добавляет код.
+   */
+  say: z.string().min(1).max(400).optional(),
 });
 
 export const frameSchema = baseFrame.extend({
@@ -100,6 +111,8 @@ const frameJsonProps = {
   reply: { type: 'string', enum: ['yes', 'no'], description: 'Ответ да/нет на вопрос ассистента' },
   choice: { type: 'integer', description: 'Номер выбранного варианта из списка ассистента (с 1)' },
   edit: { type: 'array', items: { type: 'string' }, description: 'Поля entities, которые пациент исправляет' },
+  unset: { type: 'array', items: { type: 'string', enum: [...ENTITY_KEYS] }, description: 'Поля текущего запроса, которые пациент отменил' },
+  say: { type: 'string', description: 'Короткий ответ пациенту, если реплика — вопрос или замечание, а не только данные. Без времени, цен и обещаний записи' },
 };
 
 export const FRAME_JSON_SCHEMA: Record<string, unknown> = {
@@ -136,6 +149,9 @@ function dropInvalid(raw: Record<string, unknown>): Record<string, unknown> {
         if (field && field.safeParse(ev).success) ent[ek] = ev;
       }
       out.entities = ent;
+    } else if (k === 'unset' && Array.isArray(v)) {
+      const keys = v.filter((x) => typeof x === 'string' && (ENTITY_KEYS as string[]).includes(x));
+      if (keys.length) out.unset = [...new Set(keys)];
     } else if (k === 'next' && Array.isArray(v)) {
       out.next = v.filter((x) => x && typeof x === 'object').slice(0, 3).map((x) => dropInvalid(x as Record<string, unknown>));
     } else if (shape[k]) {

@@ -48,7 +48,6 @@ export declare class DialogEngine {
     private pickSlot;
     private loadSlots;
     private forAge;
-    private byClinic;
     private referral;
     private operatorRequest;
     private doBook;
@@ -74,4 +73,9 @@ export declare class DialogEngine {
     private now;
 }
 export declare function payloadFrame(payload?: string): Frame | null;
+export declare function safeSay(say?: string): string | undefined;
+export declare function matchClinics<C extends {
+    name: string;
+    address: string | null;
+}>(query: string, clinics: C[]): C[];
 export { shortName };

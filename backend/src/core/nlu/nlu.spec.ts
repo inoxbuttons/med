@@ -113,6 +113,27 @@ describe('NluService', () => {
     expect(req.messages[1].content).toContain('Реплика пациента: Работает ли Нестерова в субботу?');
   });
 
+  it('текущий запрос — JSON без персональных данных; клиники грузятся только для модели', async () => {
+    const llm = {
+      complete: jest.fn(),
+      completeJson: jest.fn().mockResolvedValue({ data: { entities: { clinic: '21 Век на Русском поле' } }, raw: '', usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 } }),
+    };
+    const loadClinics = jest.fn().mockResolvedValue(['21 Век на Русском поле', '21 Век на Северном']);
+    const entities = { speciality: 'терапевт', time: '14:00', lastName: 'Иванова', phone: '79001234567' };
+    const res = await new NluService(llm, prompts).parse('А на Русском поле можно записаться?', { ...ctx, entities, loadClinics });
+    expect(res.frame.entities).toEqual({ clinic: '21 Век на Русском поле' });
+    const user = llm.completeJson.mock.calls[0][0].messages[1].content as string;
+    expect(user).toContain('Текущий запрос (JSON): {"speciality":"терапевт","time":"14:00"}');
+    expect(user).toContain('Клиники: 21 Век на Русском поле; 21 Век на Северном');
+    expect(user).not.toContain('Иванова');
+    expect(user).not.toContain('79001234567');
+
+    // Простой ответ разбирают правила: ни модели, ни загрузки клиник.
+    loadClinics.mockClear();
+    await new NluService(llm, prompts).parse('да', { ...ctx, expectation: { kind: 'confirm' }, loadClinics });
+    expect(loadClinics).not.toHaveBeenCalled();
+  });
+
   it('невалидный ответ — один повтор, затем goal=other; токены суммируются', async () => {
     const llm = {
       complete: jest.fn(),
@@ -121,5 +142,12 @@ describe('NluService', () => {
     const res = await new NluService(llm, prompts).parse('абракадабра', ctx);
     expect(llm.completeJson).toHaveBeenCalledTimes(2);
     expect(res).toMatchObject({ source: 'fallback', frame: { goal: 'other' }, usage: { totalTokens: 22 } });
+  });
+});
+
+describe('parseFrame: unset', () => {
+  it('оставляет только известные поля, без повторов', () => {
+    expect(parseFrame({ unset: ['time', 'time', 'foo', 7, 'clinic'] })?.unset).toEqual(['time', 'clinic']);
+    expect(parseFrame({ unset: ['foo'] })?.unset).toBeUndefined();
   });
 });

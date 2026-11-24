@@ -69,6 +69,8 @@ declare const entities: z.ZodObject<{
     visitType?: "repeat" | "primary";
     hasReferral?: boolean;
 }>;
+export declare const ENTITY_KEYS: Array<keyof z.infer<typeof entities>>;
+export declare const PATIENT_KEYS: readonly ["lastName", "firstName", "secondName", "phone", "birthday"];
 export declare const frameSchema: z.ZodObject<{
     goal: z.ZodOptional<z.ZodEnum<["book", "info", "cancel", "reschedule", "my_appointments", "smalltalk", "other"]>>;
     subject: z.ZodOptional<z.ZodEnum<["doctor", "speciality", "service", "clinic", "appointment", "symptom"]>>;
@@ -140,6 +142,8 @@ export declare const frameSchema: z.ZodObject<{
     reply: z.ZodOptional<z.ZodEnum<["yes", "no"]>>;
     choice: z.ZodOptional<z.ZodNumber>;
     edit: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+    unset: z.ZodOptional<z.ZodArray<z.ZodEnum<[string, ...string[]]>, "many">>;
+    say: z.ZodOptional<z.ZodString>;
 } & {
     next: z.ZodOptional<z.ZodArray<z.ZodObject<{
         goal: z.ZodOptional<z.ZodEnum<["book", "info", "cancel", "reschedule", "my_appointments", "smalltalk", "other"]>>;
@@ -212,6 +216,8 @@ export declare const frameSchema: z.ZodObject<{
         reply: z.ZodOptional<z.ZodEnum<["yes", "no"]>>;
         choice: z.ZodOptional<z.ZodNumber>;
         edit: z.ZodOptional<z.ZodArray<z.ZodString, "many">>;
+        unset: z.ZodOptional<z.ZodArray<z.ZodEnum<[string, ...string[]]>, "many">>;
+        say: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         choice?: number;
         entities?: {
@@ -241,6 +247,8 @@ export declare const frameSchema: z.ZodObject<{
         question?: "price" | "address" | "other" | "schedule" | "hours" | "walk_in" | "has_service" | "preparation";
         reply?: "yes" | "no";
         edit?: string[];
+        unset?: string[];
+        say?: string;
     }, {
         choice?: number;
         entities?: {
@@ -270,6 +278,8 @@ export declare const frameSchema: z.ZodObject<{
         question?: "price" | "address" | "other" | "schedule" | "hours" | "walk_in" | "has_service" | "preparation";
         reply?: "yes" | "no";
         edit?: string[];
+        unset?: string[];
+        say?: string;
     }>, "many">>;
 }, "strip", z.ZodTypeAny, {
     choice?: number;
@@ -300,6 +310,8 @@ export declare const frameSchema: z.ZodObject<{
     question?: "price" | "address" | "other" | "schedule" | "hours" | "walk_in" | "has_service" | "preparation";
     reply?: "yes" | "no";
     edit?: string[];
+    unset?: string[];
+    say?: string;
     next?: {
         choice?: number;
         entities?: {
@@ -329,6 +341,8 @@ export declare const frameSchema: z.ZodObject<{
         question?: "price" | "address" | "other" | "schedule" | "hours" | "walk_in" | "has_service" | "preparation";
         reply?: "yes" | "no";
         edit?: string[];
+        unset?: string[];
+        say?: string;
     }[];
 }, {
     choice?: number;
@@ -359,6 +373,8 @@ export declare const frameSchema: z.ZodObject<{
     question?: "price" | "address" | "other" | "schedule" | "hours" | "walk_in" | "has_service" | "preparation";
     reply?: "yes" | "no";
     edit?: string[];
+    unset?: string[];
+    say?: string;
     next?: {
         choice?: number;
         entities?: {
@@ -388,6 +404,8 @@ export declare const frameSchema: z.ZodObject<{
         question?: "price" | "address" | "other" | "schedule" | "hours" | "walk_in" | "has_service" | "preparation";
         reply?: "yes" | "no";
         edit?: string[];
+        unset?: string[];
+        say?: string;
     }[];
 }>;
 export type Frame = z.infer<typeof frameSchema>;

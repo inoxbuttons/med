@@ -12,7 +12,10 @@ var DialogEngine_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.shortName = exports.DialogEngine = void 0;
 exports.payloadFrame = payloadFrame;
+exports.safeSay = safeSay;
+exports.matchClinics = matchClinics;
 const common_1 = require("@nestjs/common");
+const frame_1 = require("../nlu/frame");
 const rule_parser_1 = require("../nlu/rule-parser");
 const date_utils_1 = require("../../integrations/shared/date-utils");
 const phone_utils_1 = require("../../integrations/shared/phone-utils");
@@ -25,6 +28,7 @@ const target_resolver_1 = require("./target-resolver");
 const text_1 = require("../catalog/text");
 const catalog_search_service_1 = require("../catalog/catalog-search.service");
 const MAX_DOCTORS_FOR_SLOTS = 10;
+const MAX_DOCTORS_AT_CLINIC = 40;
 const MAX_SLOT_OPTIONS = 8;
 let DialogEngine = DialogEngine_1 = class DialogEngine {
     constructor(deps) {
@@ -43,12 +47,15 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
             return this.say(session, guards_1.EMERGENCY_REPLY);
         }
         const { mis, booking, catalog } = await this.deps.adapters(session.clinicNetId, { townId: session.townId });
-        const frame = payloadFrame(input.payload) ?? (await this.understand(session, text, mis));
+        const frame = payloadFrame(input.payload) ?? (await this.understand(session, text, mis, catalog));
         session.messages.push({ role: 'user', content: text || input.payload || '' });
         const turn = { session, state, text, frame, profile, T, mis, booking, catalog, prefix: [], payload: input.payload };
         let reply;
         try {
             reply = await this.process(turn);
+            const said = turn.sayUsed || turn.prefix.length ? undefined : safeSay(turn.frame.say);
+            if (said)
+                turn.prefix.push(said);
         }
         catch (err) {
             this.logger.error(`Сессия ${session.id}: ${String(err?.stack ?? err)}`);
@@ -59,7 +66,7 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
             reply = { ...reply, text: [...turn.prefix, reply.text].filter(Boolean).join('\n\n') };
         return this.say(session, reply.text, reply.quickReplies);
     }
-    async understand(session, text, mis) {
+    async understand(session, text, mis, catalog) {
         const lastAssistant = [...session.messages].reverse().find((m) => m.role === 'assistant')?.content;
         const recentUser = session.messages.filter((m) => m.role === 'user').slice(-2).map((m) => m.content);
         const res = await this.deps.nlu.parse(text, {
@@ -69,12 +76,15 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
             model: session.model,
             expectation: session.state.expectation,
             stateSummary: (0, dialog_state_1.summarize)(session.state),
+            entities: session.state.entities,
+            loadClinics: async () => (await catalog.clinics()).map((c) => c.name),
             lastAssistant,
             recentUser,
             now: this.now(),
         });
         if (res.usage)
             this.deps.onUsage?.(session, 'nlu', res.usage, res.promptHash);
+        this.logger.log(`NLU ${session.id} [${res.source}]: ${JSON.stringify(withoutPatientFields(res.frame))}`);
         return res.frame;
     }
     async process(turn) {
@@ -112,10 +122,12 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
             state.options = shown;
             return { text: /спасиб|благодар/i.test(turn.text) ? T.t('thanks') : T.t('greeting') };
         }
-        if (goal === 'other') {
+        const offScript = !!state.goal && exp.kind !== 'none' && goal === 'info' && (!frame.question || frame.question === 'other') && !hasSubject(frame) && !!safeSay(frame.say);
+        if (goal === 'other' || offScript) {
             if (state.goal && exp.kind !== 'none') {
-                this.mergeEntities(turn, frame.entities ?? {});
-                turn.prefix.push('Извините, не совсем поняла.');
+                this.mergeEntities(turn, frame.entities ?? {}, undefined, frame.unset);
+                turn.prefix.push(safeSay(frame.say) ?? 'Извините, не совсем поняла.');
+                turn.sayUsed = true;
                 return this.advance(turn, exp);
             }
             state.expectation = exp;
@@ -136,7 +148,7 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
         const s = turn.state;
         if (frame.next?.length)
             s.queue.push(...frame.next);
-        this.mergeEntities(turn, frame.entities ?? {}, frame.edit);
+        this.mergeEntities(turn, frame.entities ?? {}, frame.edit, frame.unset);
         if (frame.reply === 'yes' && exp.kind === 'confirm' && turn.payload !== 'yes' && (0, rule_parser_1.yesNo)(turn.text) !== 'yes') {
             frame.reply = undefined;
         }
@@ -202,8 +214,11 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
         }
         return out;
     }
-    mergeEntities(turn, e, edit) {
+    mergeEntities(turn, e, edit, unset) {
         const s = turn.state;
+        const removed = (unset ?? []).filter((k) => !(k in e) && s.entities[k] !== undefined);
+        for (const k of removed)
+            delete s.entities[k];
         const changed = Object.entries(e)
             .filter(([k, v]) => v !== undefined && s.entities[k] !== v)
             .map(([k]) => k);
@@ -217,8 +232,9 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
                 if (!(k in e))
                     delete s.entities[k];
         }
-        (0, dialog_state_1.invalidate)(s, [...changed, ...(edit ?? [])]);
+        (0, dialog_state_1.invalidate)(s, [...changed, ...removed, ...(edit ?? [])]);
         Object.assign(s.entities, e);
+        turn.changed = [...(turn.changed ?? []), ...changed, ...removed];
         const p = turn.session.patient ?? {};
         const pd = {
             ...p,
@@ -271,7 +287,7 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
                 if (s.goal === 'book') {
                     s.slot = undefined;
                     const e = turn.frame.entities ?? {};
-                    if (e.date || e.dayOfWeek || e.relativeDay || e.time || e.timeOfDay || e.nextWeek)
+                    if (e.date || e.dayOfWeek || e.relativeDay || e.time || e.timeOfDay || e.nextWeek || e.clinic || turn.frame.unset?.length)
                         return null;
                     s.expectation = { kind: 'yes_no', field: 'proceed' };
                     return { text: 'Хорошо, не записываю. Подобрать другое время?', quickReplies: render_1.YES_NO };
@@ -366,29 +382,53 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
     }
     async pickSlot(turn) {
         const s = turn.state;
-        const { T, booking } = turn;
+        const { T } = turn;
         const now = this.now();
         const win = (0, dates_1.slotWindow)(s.entities, now);
-        const load = async (mode, date) => this.loadSlots(turn, mode, date);
+        let wanted = [];
+        if (s.entities.clinic) {
+            const all = await turn.catalog.clinics().catch(() => []);
+            wanted = matchClinics(s.entities.clinic, all);
+            if (!wanted.length) {
+                turn.prefix.push(T.t('clinicNotFound', { clinic: s.entities.clinic, list: all.map((c) => c.name).join('; ') }));
+                delete s.entities.clinic;
+            }
+        }
+        const ids = new Set(wanted.map((c) => c.id));
+        const clinicName = wanted.length === 1 ? wanted[0].name : '';
+        const clinicId = wanted.length === 1 ? wanted[0].id : undefined;
+        const atClinic = (sl) => (ids.size ? sl.filter((x) => ids.has(x.clinicId)) : sl);
+        const prepare = (sl, e) => this.forAge(atClinic((0, dates_1.filterSlots)(sl, e, now)), s.entities.child);
+        const load = async (mode, date, cid = clinicId) => this.loadSlots(turn, mode, date, cid);
         if (s.excludeDate && win.mode === 'nearest') {
             win.mode = 'week';
             win.date = nextDay(s.excludeDate);
         }
-        let slots = this.forAge((0, dates_1.filterSlots)(await load(win.mode, win.date), s.entities, now), s.entities.child);
+        let slots = prepare(await load(win.mode, win.date), s.entities);
         if (s.excludeDate)
             slots = slots.filter((sl) => sl.date !== s.excludeDate);
-        slots = this.byClinic(slots, s.entities.clinic);
         if (s.entities.time && slots.length) {
             const { exact, near } = (0, dates_1.byTime)(slots, s.entities.time);
             if (exact) {
+                if (clinicName && turn.changed?.includes('clinic'))
+                    turn.prefix.push(T.t('clinicHasTime', { clinic: clinicName }));
                 s.slot = exact;
                 return null;
             }
             return this.offer(turn, T.t('timeTaken', { time: s.entities.time }), near.map((sl) => ({ kind: 'slot', slot: sl, label: (0, render_1.slotLabel)(sl, s.target?.kind === 'speciality') })));
         }
         if (slots.length === 0 && win.mode === 'day') {
-            turn.prefix.push(T.t('noSlotsDay', { day: dayWord(s.entities, win.date) }));
-            slots = this.byClinic(this.forAge((0, dates_1.filterSlots)(await load('nearest'), { ...s.entities, now: undefined }, now), s.entities.child), s.entities.clinic);
+            const day = dayWord(s.entities, win.date);
+            turn.prefix.push(clinicName ? T.t('noSlotsDayAt', { day, clinic: clinicName }) : T.t('noSlotsDay', { day }));
+            slots = prepare(await load('nearest'), { ...s.entities, now: undefined });
+        }
+        if (slots.length === 0 && ids.size) {
+            const elsewhere = this.forAge((0, dates_1.filterSlots)(await load('nearest', undefined, null), { ...s.entities, now: undefined }, now), s.entities.child);
+            if (elsewhere.length) {
+                turn.prefix.push(T.t('noSlotsAt', { clinic: clinicName || s.entities.clinic }));
+                delete s.entities.clinic;
+                slots = elsewhere;
+            }
         }
         if (slots.length === 0) {
             if (s.target?.kind === 'service') {
@@ -402,25 +442,20 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
         const who = s.target && s.target.kind !== 'speciality' ? (0, render_1.targetLabel)(s.target) : '';
         return this.offer(turn, who ? T.t('chooseSlotFor', { who }) : T.t('chooseSlot'), options.map((sl) => ({ kind: 'slot', slot: sl, label: (0, render_1.slotLabel)(sl, perDoctor, manyClinics) })));
     }
-    async loadSlots(turn, mode, date) {
+    async loadSlots(turn, mode, date, clinicId) {
         const t = turn.state.target;
+        const cid = clinicId ?? undefined;
         if (t.kind === 'doctor')
-            return turn.booking.findSlots({ doctorId: t.doctorId, mode, date });
+            return turn.booking.findSlots({ doctorId: t.doctorId, mode, date, clinicId: cid });
         if (t.kind === 'service')
-            return turn.booking.findSlots({ serviceId: t.serviceId, mode, date });
-        const lists = await Promise.all(t.doctorIds.slice(0, MAX_DOCTORS_FOR_SLOTS).map((doctorId) => turn.booking.findSlots({ doctorId, mode, date }).catch(() => [])));
+            return turn.booking.findSlots({ serviceId: t.serviceId, mode, date, clinicId: cid });
+        const limit = cid ? MAX_DOCTORS_AT_CLINIC : MAX_DOCTORS_FOR_SLOTS;
+        const lists = await Promise.all(t.doctorIds.slice(0, limit).map((doctorId) => turn.booking.findSlots({ doctorId, mode, date, clinicId: cid }).catch(() => [])));
         return lists.flat().sort((a, b) => a.start.localeCompare(b.start));
     }
     forAge(slots, child) {
         const kids = (s) => /детск/i.test(s.clinicName);
         const f = slots.filter((s) => (child ? kids(s) : !kids(s)));
-        return f.length ? f : slots;
-    }
-    byClinic(slots, clinic) {
-        if (!clinic)
-            return slots;
-        const stem = clinic.toLowerCase().replace(/ё/g, 'е').slice(0, Math.max(4, clinic.length - 2));
-        const f = slots.filter((s) => s.clinicName.toLowerCase().replace(/ё/g, 'е').includes(stem));
         return f.length ? f : slots;
     }
     async referral(turn, svc) {
@@ -693,6 +728,7 @@ let DialogEngine = DialogEngine_1 = class DialogEngine {
         return this.finish(turn, { text: turn.T.t('bookFailed', { reason: res.message }) });
     }
     async freeAnswer(turn) {
+        turn.sayUsed = true;
         if (!turn.text)
             return { text: turn.T.t('fallback') };
         const res = await this.deps.answers.agent(turn.text, turn.catalog, this.answerCtx(turn));
@@ -846,8 +882,43 @@ function onlyPatientData(f) {
     const patient = ['lastName', 'firstName', 'secondName', 'phone', 'birthday'];
     return keys.length > 0 && keys.every((k) => patient.includes(k));
 }
+function hasSubject(f) {
+    const e = f.entities ?? {};
+    return !!(e.doctorName || e.speciality || e.serviceQuery || e.symptom);
+}
+const SAY_FACTS = /\d{1,2}[:.]\d{2}|₽|руб|запис(ала|ал|ываю|ую|ана|ан)(?![а-яё])|запишу|подтвержд|свободн|занят|нет времени|есть время|есть мест|нет мест/i;
+function safeSay(say) {
+    const t = say?.trim();
+    if (!t || t.length > 300 || SAY_FACTS.test(t))
+        return undefined;
+    return t;
+}
 function hasConstraints(f) {
-    return Object.values(f.entities ?? {}).some((v) => v !== undefined);
+    return Object.values(f.entities ?? {}).some((v) => v !== undefined) || !!f.unset?.length;
+}
+function withoutPatientFields(f) {
+    const strip = (e) => {
+        if (!e)
+            return e;
+        const out = { ...e };
+        for (const k of frame_1.PATIENT_KEYS)
+            if (out[k] !== undefined)
+                out[k] = '***';
+        return out;
+    };
+    return { ...f, entities: strip(f.entities) ?? {}, ...(f.next ? { next: f.next.map((n) => ({ ...n, entities: strip(n.entities) ?? {} })) } : {}) };
+}
+function matchClinics(query, clinics) {
+    const exact = clinics.filter((c) => (0, text_1.normalize)(c.name) === (0, text_1.normalize)(query));
+    if (exact.length)
+        return exact;
+    const q = (0, text_1.words)(query);
+    const scored = clinics.map((c) => {
+        const w = (0, text_1.words)(`${c.name} ${c.address ?? ''}`);
+        return { c, n: q.filter((x) => w.some((y) => (0, text_1.sameStem)(x, y))).length };
+    });
+    const best = Math.max(0, ...scored.map((x) => x.n));
+    return best ? scored.filter((x) => x.n === best).map((x) => x.c) : [];
 }
 function inferGoal(f) {
     if (f.subject === 'symptom' || f.entities?.symptom)

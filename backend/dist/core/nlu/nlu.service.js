@@ -34,7 +34,8 @@ let NluService = NluService_1 = class NluService {
             return { frame: byRules, source: 'rules' };
         const now = ctx.now ?? new Date();
         const prompt = this.prompts.build('nlu', { clinicNetId: ctx.clinicNetId, mis: ctx.mis }, { today: (0, date_utils_1.toDateStr)(now), weekday: WEEKDAYS_RU[now.getDay()] });
-        const user = buildUserMessage(text, ctx);
+        const clinics = ctx.clinics ?? (ctx.loadClinics ? await ctx.loadClinics().catch(() => undefined) : undefined);
+        const user = buildUserMessage(text, { ...ctx, clinics });
         let usage;
         for (let attempt = 0; attempt < 2; attempt++) {
             try {
@@ -72,6 +73,11 @@ function buildUserMessage(text, ctx) {
     const lines = [];
     if (ctx.stateSummary)
         lines.push(`Состояние диалога: ${ctx.stateSummary}`);
+    const current = withoutPatientData(ctx.entities);
+    if (current)
+        lines.push(`Текущий запрос (JSON): ${JSON.stringify(current)}`);
+    if (ctx.clinics?.length)
+        lines.push(`Клиники: ${ctx.clinics.join('; ')}`);
     const waits = describeExpectation(ctx.expectation);
     if (waits)
         lines.push(`Ассистент ждёт: ${waits}`);
@@ -85,6 +91,16 @@ function buildUserMessage(text, ctx) {
         lines.push(`Пациент ранее: ${u.slice(0, 200)}`);
     lines.push(`Реплика пациента: ${text}`);
     return lines.join('\n');
+}
+function withoutPatientData(e) {
+    if (!e)
+        return null;
+    const out = {};
+    for (const [k, v] of Object.entries(e)) {
+        if (v !== undefined && !frame_1.PATIENT_KEYS.includes(k))
+            out[k] = v;
+    }
+    return Object.keys(out).length ? out : null;
 }
 function sumUsage(a, b) {
     if (!a)

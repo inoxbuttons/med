@@ -5,7 +5,7 @@ import { toDateStr } from '../../integrations/shared/date-utils';
 import { LLM_PORT, LlmPort } from '../ports/llm.port';
 import { MisKind } from '../ports';
 import { PromptBuilder } from '../prompts/prompt-builder.service';
-import { Frame, FRAME_JSON_SCHEMA, parseFrame } from './frame';
+import { Frame, FrameEntities, FRAME_JSON_SCHEMA, parseFrame, PATIENT_KEYS } from './frame';
 import { Expectation, parseByRules } from './rule-parser';
 
 const WEEKDAYS_RU = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
@@ -18,6 +18,12 @@ export interface NluContext {
   expectation: Expectation;
   /** Кратко: текущая цель и что уже известно («запись к врачу; специальность: невролог»). */
   stateSummary?: string;
+  /** Текущий запрос (накопленные entities) — модель возвращает изменения к нему. */
+  entities?: FrameEntities;
+  /** Названия клиник сети — чтобы модель вернула клинику как в списке. */
+  clinics?: string[];
+  /** Загрузить названия клиник, только если дело дошло до модели. */
+  loadClinics?: () => Promise<string[]>;
   /** Последнее сообщение ассистента (обрезается). */
   lastAssistant?: string;
   /** 1–2 предыдущие реплики пациента. */
@@ -55,7 +61,8 @@ export class NluService {
       { clinicNetId: ctx.clinicNetId, mis: ctx.mis },
       { today: toDateStr(now), weekday: WEEKDAYS_RU[now.getDay()] },
     );
-    const user = buildUserMessage(text, ctx);
+    const clinics = ctx.clinics ?? (ctx.loadClinics ? await ctx.loadClinics().catch(() => undefined) : undefined);
+    const user = buildUserMessage(text, { ...ctx, clinics });
 
     let usage: LlmUsage | undefined;
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -86,6 +93,9 @@ export class NluService {
 export function buildUserMessage(text: string, ctx: NluContext): string {
   const lines: string[] = [];
   if (ctx.stateSummary) lines.push(`Состояние диалога: ${ctx.stateSummary}`);
+  const current = withoutPatientData(ctx.entities);
+  if (current) lines.push(`Текущий запрос (JSON): ${JSON.stringify(current)}`);
+  if (ctx.clinics?.length) lines.push(`Клиники: ${ctx.clinics.join('; ')}`);
   const waits = describeExpectation(ctx.expectation);
   if (waits) lines.push(`Ассистент ждёт: ${waits}`);
   if (ctx.expectation.kind === 'choice') {
@@ -96,6 +106,16 @@ export function buildUserMessage(text: string, ctx: NluContext): string {
   for (const u of (ctx.recentUser ?? []).slice(-2)) lines.push(`Пациент ранее: ${u.slice(0, 200)}`);
   lines.push(`Реплика пациента: ${text}`);
   return lines.join('\n');
+}
+
+/** Без персональных данных: в модель идёт только то, что нужно для разбора. */
+function withoutPatientData(e?: FrameEntities): Partial<FrameEntities> | null {
+  if (!e) return null;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(e)) {
+    if (v !== undefined && !(PATIENT_KEYS as readonly string[]).includes(k)) out[k] = v;
+  }
+  return Object.keys(out).length ? (out as Partial<FrameEntities>) : null;
 }
 
 function sumUsage(a: LlmUsage | undefined, b: LlmUsage | undefined): LlmUsage | undefined {

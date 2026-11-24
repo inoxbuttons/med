@@ -1,11 +1,11 @@
 import * as path from 'path';
-import { Appointment, Slot } from '../domain';
+import { Appointment, Clinic, Slot } from '../domain';
 import { BookingPort } from '../ports';
 import { SearchHit } from '../catalog/catalog-search.service';
 import { Frame } from '../nlu/frame';
 import { parseByRules } from '../nlu/rule-parser';
 import { ClinicProfileService } from '../profile/clinic-profile.service';
-import { DialogEngine, EngineDeps } from './dialog-engine.service';
+import { DialogEngine, EngineDeps, matchClinics, safeSay } from './dialog-engine.service';
 import { DialogSession, emptyState } from './dialog-state';
 
 const NOW = new Date(2026, 10, 18, 9, 0); // среда, 18 ноября 2026, 09:00
@@ -99,7 +99,9 @@ function fakeBooking(over: Partial<BookingPort> = {}): BookingPort & { calls: Re
 }
 
 // ── Движок с фейковым NLU ──────────────────────────────────────────────────
-function setup(nluScript: Record<string, Frame>, booking = fakeBooking(), clientId?: number) {
+const ONE_CLINIC: Clinic[] = [{ id: 3, name: 'Русское поле', address: 'Чехова, 357А', phone: null }];
+
+function setup(nluScript: Record<string, Frame>, booking = fakeBooking(), clientId?: number, clinics: Clinic[] = ONE_CLINIC) {
   const llmCalls: string[] = [];
   const deps: EngineDeps = {
     nlu: {
@@ -116,7 +118,7 @@ function setup(nluScript: Record<string, Frame>, booking = fakeBooking(), client
       async agent(q: string) { llmCalls.push(`agent:${q}`); return { text: 'ответ агента', usage: [], promptHash: 'h', task: 'agent' }; },
     },
     search: fakeSearch,
-    adapters: async () => ({ mis: 'local', booking, catalog: { clinicNetId: 2, clinics: async () => [{ id: 3, name: 'Русское поле', address: 'Чехова, 357А', phone: null }] } as any }),
+    adapters: async () => ({ mis: 'local', booking, catalog: { clinicNetId: 2, clinics: async () => clinics } as any }),
     profile: (id) => profiles.forNet(id),
     now: () => NOW,
   };
@@ -459,5 +461,192 @@ describe('DialogEngine: данные от модели', () => {
     await say('к Нестеровой');
     await say('Тестов Тест, 8 999 000-00-00, 1 января 1990');
     expect(session.patient).toMatchObject({ phone: '79990000000', birthday: '1990-01-01' });
+  });
+});
+
+// ── Клиники: смена клиники посреди записи ───────────────────────────────────
+const TWO_CLINICS: Clinic[] = [
+  { id: 3, name: '21 Век на Русском поле', address: 'Чехова, 357А', phone: null },
+  { id: 4, name: '21 Век на Северном', address: 'Северный проспект, 12', phone: null },
+];
+
+/** Терапевт (врач 12) в двух клиниках; findSlots учитывает clinicId, как настоящий адаптер. */
+function therapistBooking(schedule: Array<[clinicId: number, date: string, time: string, label: string]>) {
+  const slots: Slot[] = schedule.map(([clinicId, date, time, label]) => ({
+    start: `${date}T${time}:00`, end: null, date, time, dateLabel: label, clinicId,
+    clinicName: TWO_CLINICS.find((c) => c.id === clinicId)!.name, doctorId: 12, doctorName: 'Савченко Илона Олеговна',
+  }));
+  return fakeBooking({
+    async findSlots(q) {
+      let s = slots.filter((x) => x.doctorId === q.doctorId && (!q.clinicId || x.clinicId === q.clinicId));
+      if (q.mode === 'day' && q.date) s = s.filter((x) => x.date === q.date);
+      else if (s.length) s = s.filter((x) => x.date === [...s].sort((a, b) => a.start.localeCompare(b.start))[0].date);
+      return s;
+    },
+  });
+}
+
+const PATIENT = { lastName: 'Иванова', firstName: 'Мария', phone: '79001234567', birthday: '1990-02-01' };
+const THERAPIST_14 = { goal: 'book' as const, entities: { speciality: 'терапевт', relativeDay: 'today' as const, time: '14:00' } };
+
+describe('DialogEngine: смена клиники', () => {
+  it('отказ → «А на Русском поле можно?» — ответ про ту клинику, а не повтор старой записи', async () => {
+    const booking = therapistBooking([[4, '2026-11-18', '14:00', 'Сегодня'], [3, '2026-11-18', '14:00', 'Сегодня']]);
+    const { say, session } = setup({
+      'Запиши меня к терапевту на 14:00 сегодня': THERAPIST_14,
+      // Модель вернула клинику не в том падеже, что в названии.
+      'А на Русском поле можно записаться?': { entities: { clinic: 'Русское поле' } },
+    }, booking, undefined, TWO_CLINICS);
+    session.patient = PATIENT as any;
+
+    let r = await say('Запиши меня к терапевту на 14:00 сегодня');
+    expect(r.text).toContain('Подтверждаете запись?');
+    expect(r.text).toContain('Северном');
+    r = await say('Нет');
+    expect(r.text).toContain('Подобрать другое время?');
+
+    r = await say('А на Русском поле можно записаться?');
+    expect(r.text).toContain('Да, в клинике «21 Век на Русском поле» есть свободное время');
+    expect(r.text).toContain('Подтверждаете запись?');
+    expect(r.text).toContain('Русском поле');
+    expect(r.text).not.toContain('Северном');
+  });
+
+  it('в названной клинике в этот день нет — сказать об этом и показать ближайшее там же', async () => {
+    const booking = therapistBooking([[4, '2026-11-18', '14:00', 'Сегодня'], [3, '2026-11-20', '10:00', 'Пятница, 20 ноября']]);
+    const { say, session } = setup({
+      'Запиши меня к терапевту на 14:00 сегодня': THERAPIST_14,
+      'А на Русском поле?': { entities: { clinic: 'на Русском поле' } },
+    }, booking, undefined, TWO_CLINICS);
+    session.patient = PATIENT as any;
+
+    await say('Запиши меня к терапевту на 14:00 сегодня');
+    await say('Нет');
+    const r = await say('А на Русском поле?');
+    expect(r.text).toContain('На сегодня в клинике «21 Век на Русском поле» свободного времени нет');
+    expect(r.text).toContain('Пятница, 20 ноября');
+    expect(r.text).not.toContain('Северном');
+  });
+
+  it('в названной клинике совсем нет времени — сказать и предложить другие клиники', async () => {
+    const booking = therapistBooking([[4, '2026-11-18', '14:00', 'Сегодня'], [4, '2026-11-19', '09:00', 'Завтра']]);
+    const { say, session } = setup({
+      'к терапевту на Русском поле': { goal: 'book', entities: { speciality: 'терапевт', clinic: 'Русское поле' } },
+    }, booking, undefined, TWO_CLINICS);
+    session.patient = PATIENT as any;
+
+    const r = await say('к терапевту на Русском поле');
+    expect(r.text).toContain('В клинике «21 Век на Русском поле» свободного времени в ближайшие дни нет');
+    expect(r.text).toContain('Сегодня 14:00');
+    expect(session.state.entities.clinic).toBeUndefined();
+  });
+
+  it('неизвестная клиника — сказать и перечислить наши, время во всех', async () => {
+    const booking = therapistBooking([[4, '2026-11-18', '14:00', 'Сегодня']]);
+    const { say } = setup({
+      'к терапевту на Ленина': { goal: 'book', entities: { speciality: 'терапевт', clinic: 'Ленина' } },
+    }, booking, undefined, TWO_CLINICS);
+    const r = await say('к терапевту на Ленина');
+    expect(r.text).toContain('Не нашла клинику «Ленина»');
+    expect(r.text).toContain('21 Век на Северном');
+    expect(r.text).toContain('Сегодня 14:00');
+  });
+
+  it('unset: «в любое время» снимает время — показывается список, а не одно подтверждение', async () => {
+    const booking = therapistBooking([[4, '2026-11-18', '14:00', 'Сегодня'], [4, '2026-11-18', '15:00', 'Сегодня']]);
+    const { say, session } = setup({
+      'Запиши меня к терапевту на 14:00 сегодня': THERAPIST_14,
+      'нет, давайте в любое время': { reply: 'no', entities: {}, unset: ['time'] },
+    }, booking, undefined, TWO_CLINICS);
+    session.patient = PATIENT as any;
+
+    await say('Запиши меня к терапевту на 14:00 сегодня');
+    const r = await say('нет, давайте в любое время');
+    expect(session.state.entities.time).toBeUndefined();
+    expect(r.text).toContain('Свободное время');
+    expect(r.text).not.toContain('Подтверждаете');
+    expect(r.text).not.toContain('Подобрать другое время');
+  });
+});
+
+describe('DialogEngine: реплика модели (say)', () => {
+  it('вопрос не по сценарию посреди записи — ответ модели и тот же шаг, без агента', async () => {
+    const booking = therapistBooking([[4, '2026-11-18', '14:00', 'Сегодня']]);
+    const { say, session, llmCalls } = setup({
+      'Запиши меня к терапевту на 14:00 сегодня': THERAPIST_14,
+      'А врач хороший? Отзывы есть?': { goal: 'info', question: 'other', entities: {}, say: 'Отзывов о врачах у меня нет.' },
+    }, booking, undefined, TWO_CLINICS);
+    session.patient = PATIENT as any;
+
+    await say('Запиши меня к терапевту на 14:00 сегодня');
+    const r = await say('А врач хороший? Отзывы есть?');
+    expect(r.text.startsWith('Отзывов о врачах у меня нет.')).toBe(true);
+    expect(r.text).toContain('Подтверждаете запись?');
+    expect(session.state.goal).toBe('book');
+    expect(llmCalls.some((c) => c.startsWith('agent:'))).toBe(false);
+  });
+
+  it('непонятная реплика посреди записи — уточнение модели вместо «не поняла»', async () => {
+    const booking = therapistBooking([[4, '2026-11-18', '14:00', 'Сегодня']]);
+    const { say, session } = setup({
+      'Запиши меня к терапевту на 14:00 сегодня': THERAPIST_14,
+      'а у вас кот есть': { goal: 'other', entities: {}, say: 'Не совсем поняла вопрос. Уточните, пожалуйста.' },
+    }, booking, undefined, TWO_CLINICS);
+    session.patient = PATIENT as any;
+
+    await say('Запиши меня к терапевту на 14:00 сегодня');
+    const r = await say('а у вас кот есть');
+    expect(r.text).toContain('Не совсем поняла вопрос');
+    expect(r.text).not.toContain('Извините, не совсем поняла.');
+    expect(r.text).toContain('Подтверждаете запись?');
+  });
+
+  it('замечание вместе с данными — фраза модели перед ответом шаблона', async () => {
+    const booking = therapistBooking([[4, '2026-11-18', '14:00', 'Сегодня'], [4, '2026-11-19', '09:00', 'Завтра']]);
+    const { say, session } = setup({
+      'Запиши меня к терапевту на 14:00 сегодня': THERAPIST_14,
+      'ой, я сегодня на работе, давайте завтра': { reply: 'no', entities: { relativeDay: 'tomorrow' }, edit: ['relativeDay'], unset: ['time'], say: 'Конечно, посмотрю завтра.' },
+    }, booking, undefined, TWO_CLINICS);
+    session.patient = PATIENT as any;
+
+    await say('Запиши меня к терапевту на 14:00 сегодня');
+    const r = await say('ой, я сегодня на работе, давайте завтра');
+    expect(r.text.startsWith('Конечно, посмотрю завтра.')).toBe(true);
+    expect(r.text).toContain('09:00');
+  });
+
+  it('фраза модели с фактами (время, запись) отбрасывается — факты говорит код', async () => {
+    const booking = therapistBooking([[4, '2026-11-18', '14:00', 'Сегодня']]);
+    const { say, session } = setup({
+      'Запиши меня к терапевту на 14:00 сегодня': { ...THERAPIST_14, say: 'Записала Вас на 14:00!' },
+    }, booking, undefined, TWO_CLINICS);
+    session.patient = PATIENT as any;
+    const r = await say('Запиши меня к терапевту на 14:00 сегодня');
+    expect(r.text).not.toContain('Записала');
+    expect(r.text).toContain('Подтверждаете запись?');
+  });
+
+  it('safeSay', () => {
+    expect(safeSay('Понимаю.')).toBe('Понимаю.');
+    expect(safeSay('Отзывов о врачах у меня нет.')).toBe('Отзывов о врачах у меня нет.');
+    expect(safeSay('Есть время в 15:30')).toBeUndefined();
+    expect(safeSay('Стоит 2000 ₽')).toBeUndefined();
+    expect(safeSay('Я Вас записала')).toBeUndefined();
+    expect(safeSay('Сейчас запишу')).toBeUndefined();
+    expect(safeSay('Могу записать Вас к другому врачу')).toBe('Могу записать Вас к другому врачу');
+    expect(safeSay('  ')).toBeUndefined();
+  });
+});
+
+describe('matchClinics', () => {
+  it('по словам названия и адреса с учётом окончаний', () => {
+    const id = (q: string) => matchClinics(q, TWO_CLINICS).map((c) => c.id);
+    expect(id('Русское поле')).toEqual([3]);
+    expect(id('на Русском поле')).toEqual([3]);
+    expect(id('21 Век на Северном')).toEqual([4]);
+    expect(id('Северный проспект')).toEqual([4]);
+    expect(id('Чехова')).toEqual([3]);
+    expect(id('Ленина')).toEqual([]);
+    expect(id('21 век')).toEqual([]);
   });
 });

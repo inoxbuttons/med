@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.FRAME_JSON_SCHEMA = exports.frameSchema = exports.TIME_OF_DAY = exports.RELATIVE_DAYS = exports.DAYS = exports.QUESTIONS = exports.SUBJECTS = exports.GOALS = void 0;
+exports.FRAME_JSON_SCHEMA = exports.frameSchema = exports.PATIENT_KEYS = exports.ENTITY_KEYS = exports.TIME_OF_DAY = exports.RELATIVE_DAYS = exports.DAYS = exports.QUESTIONS = exports.SUBJECTS = exports.GOALS = void 0;
 exports.parseFrame = parseFrame;
 const zod_1 = require("zod");
 exports.GOALS = ['book', 'info', 'cancel', 'reschedule', 'my_appointments', 'smalltalk', 'other'];
@@ -31,6 +31,8 @@ const entities = zod_1.z.object({
     phone: zod_1.z.string().min(1).optional(),
     birthday: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
+exports.ENTITY_KEYS = Object.keys(entities.shape);
+exports.PATIENT_KEYS = ['lastName', 'firstName', 'secondName', 'phone', 'birthday'];
 const baseFrame = zod_1.z.object({
     goal: zod_1.z.enum(exports.GOALS).optional(),
     subject: zod_1.z.enum(exports.SUBJECTS).optional(),
@@ -39,6 +41,8 @@ const baseFrame = zod_1.z.object({
     reply: zod_1.z.enum(['yes', 'no']).optional(),
     choice: zod_1.z.number().int().min(1).optional(),
     edit: zod_1.z.array(zod_1.z.string()).optional(),
+    unset: zod_1.z.array(zod_1.z.enum(exports.ENTITY_KEYS)).optional(),
+    say: zod_1.z.string().min(1).max(400).optional(),
 });
 exports.frameSchema = baseFrame.extend({
     next: zod_1.z.array(baseFrame).max(3).optional(),
@@ -76,6 +80,8 @@ const frameJsonProps = {
     reply: { type: 'string', enum: ['yes', 'no'], description: 'Ответ да/нет на вопрос ассистента' },
     choice: { type: 'integer', description: 'Номер выбранного варианта из списка ассистента (с 1)' },
     edit: { type: 'array', items: { type: 'string' }, description: 'Поля entities, которые пациент исправляет' },
+    unset: { type: 'array', items: { type: 'string', enum: [...exports.ENTITY_KEYS] }, description: 'Поля текущего запроса, которые пациент отменил' },
+    say: { type: 'string', description: 'Короткий ответ пациенту, если реплика — вопрос или замечание, а не только данные. Без времени, цен и обещаний записи' },
 };
 exports.FRAME_JSON_SCHEMA = {
     type: 'object',
@@ -111,6 +117,11 @@ function dropInvalid(raw) {
                     ent[ek] = ev;
             }
             out.entities = ent;
+        }
+        else if (k === 'unset' && Array.isArray(v)) {
+            const keys = v.filter((x) => typeof x === 'string' && exports.ENTITY_KEYS.includes(x));
+            if (keys.length)
+                out.unset = [...new Set(keys)];
         }
         else if (k === 'next' && Array.isArray(v)) {
             out.next = v.filter((x) => x && typeof x === 'object').slice(0, 3).map((x) => dropInvalid(x));

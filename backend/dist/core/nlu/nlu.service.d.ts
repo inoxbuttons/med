@@ -3,7 +3,7 @@ import { LlmUsage } from '../../llm/llm.types';
 import { LlmPort } from '../ports/llm.port';
 import { MisKind } from '../ports';
 import { PromptBuilder } from '../prompts/prompt-builder.service';
-import { Frame } from './frame';
+import { Frame, FrameEntities } from './frame';
 import { Expectation } from './rule-parser';
 export interface NluContext {
     clinicNetId: number;
@@ -12,6 +12,9 @@ export interface NluContext {
     model?: string;
     expectation: Expectation;
     stateSummary?: string;
+    entities?: FrameEntities;
+    clinics?: string[];
+    loadClinics?: () => Promise<string[]>;
     lastAssistant?: string;
     recentUser?: string[];
     now?: Date;
