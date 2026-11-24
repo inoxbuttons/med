@@ -475,7 +475,8 @@ export class DialogEngine {
         s.slot = exact;
         return null;
       }
-      return this.offer(turn, T.t('timeTaken', { time: s.entities.time }), near.map((sl) => ({ kind: 'slot', slot: sl, label: slotLabel(sl, s.target?.kind === 'speciality') })));
+      const title = clinicName ? T.t('timeTakenAt', { time: s.entities.time, clinic: clinicName }) : T.t('timeTaken', { time: s.entities.time });
+      return this.offer(turn, title, near.map((sl) => ({ kind: 'slot', slot: sl, label: slotLabel(sl, s.target?.kind === 'speciality') })));
     }
 
     if (slots.length === 0 && win.mode === 'day') {

@@ -512,6 +512,21 @@ describe('DialogEngine: смена клиники', () => {
     expect(r.text).not.toContain('Северном');
   });
 
+  it('в названной клинике это время занято — назвать клинику в ответе', async () => {
+    const booking = therapistBooking([[4, '2026-11-18', '14:00', 'Сегодня'], [3, '2026-11-18', '12:30', 'Сегодня']]);
+    const { say, session } = setup({
+      'Запиши меня к терапевту на 14:00 сегодня': THERAPIST_14,
+      'А на Русском поле можно записаться?': { entities: { clinic: '21 Век на Русском поле' } },
+    }, booking, undefined, TWO_CLINICS);
+    session.patient = PATIENT as any;
+
+    await say('Запиши меня к терапевту на 14:00 сегодня');
+    await say('Нет');
+    const r = await say('А на Русском поле можно записаться?');
+    expect(r.text).toContain('В клинике «21 Век на Русском поле» в 14:00 уже занято');
+    expect(r.text).toContain('12:30');
+  });
+
   it('в названной клинике в этот день нет — сказать об этом и показать ближайшее там же', async () => {
     const booking = therapistBooking([[4, '2026-11-18', '14:00', 'Сегодня'], [3, '2026-11-20', '10:00', 'Пятница, 20 ноября']]);
     const { say, session } = setup({
